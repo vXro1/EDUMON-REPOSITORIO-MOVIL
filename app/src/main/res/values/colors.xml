@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 🎨 Colores personalizados -->
+    <color name="colorAzulCielo">#00B9F0</color>
+    <color name="colorVerdeLima">#7AD107</color>
+    <color name="colorFucsia">#FE327B</color>
+    <color name="colorCeleste">#01C9F4</color>
+    <color name="colorNaranja">#FA6D00</color>
+    <color name="colorAmarillo">#FED31F</color>
+    <color name="colorBlanco">#FFFFFF</color>
+    <color name="colorGrisOscuro">#2D3748</color>
+    <color name="colorGrisClaro">#E2E8F0</color>
+
+    <!-- Colores de sistema con mejor contraste -->
+    <color name="colorPrimario">#FFFFFF</color>
+    <color name="colorSecundario">#00B9F0</color>
+    <color name="colorAcento">#FE327B</color>
+
+    <!-- Colores adicionales UX -->
+    <color name="colorGrisMedio">#718096</color>
+    <color name="colorAzulOscuro">#0082B3</color>
+    <color name="colorFucsiaOscuro">#D91E5B</color>
+    <color name="colorVerdeOscuro">#5A9A05</color>
+
+    <color name="colorExito">#48BB78</color>
+    <color name="colorError">#F56565</color>
+    <color name="colorAdvertencia">#ED8936</color>
+    <color name="colorInfo">#4299E1</color>
+
+    <color name="colorFondoClaro">#F7FAFC</color>
+    <color name="colorFondoCard">#FFFFFF</color>
+    <color name="colorFondoOverlay">#80000000</color>
+    <color name="purple_200">#BB86FC</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="teal_700">#018786</color>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+</resources>
