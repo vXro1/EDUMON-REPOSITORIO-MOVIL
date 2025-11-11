@@ -63,7 +63,6 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
-    var showMaintenanceDialog by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
@@ -375,8 +374,8 @@ fun LoginScreen(
                     OutlinedTextField(
                         value = contraseña,
                         onValueChange = { contraseña = it; errorMessage = null },
-                        label = { Text("Cédula (contraseña)") },
-                        placeholder = { Text("Tu cédula") },
+                        label = { Text("Contraseña") },
+                        placeholder = { Text("Ingresa tu contraseña") },
                         leadingIcon = {
                             Box(
                                 modifier = Modifier
@@ -416,7 +415,7 @@ fun LoginScreen(
                         visualTransformation = if (passwordVisible) VisualTransformation.None
                         else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
+                            keyboardType = KeyboardType.Text,
                             imeAction = ImeAction.Done
                         ),
                         keyboardActions = KeyboardActions(
@@ -499,70 +498,53 @@ fun LoginScreen(
                                         val token = body?.get("token")?.asString
                                         val user = body?.getAsJsonObject("user")
 
-                                        // 🔥 OBTENER primerInicioSesion DEL BACKEND
+                                        // Obtener primerInicioSesion del backend
                                         val primerInicioSesion = body?.get("primerInicioSesion")?.asBoolean ?: false
 
                                         if (!token.isNullOrEmpty() && user != null) {
                                             val rol = user.get("rol")?.asString ?: ""
 
-                                            // 🚀 TODOS LOS ROLES: Si es primer inicio, ir a avatars
-                                            if (primerInicioSesion) {
-                                                val userData = UserData(
-                                                    id = user.get("id")?.asString ?: "",
-                                                    nombre = user.get("nombre")?.asString ?: "",
-                                                    apellido = user.get("apellido")?.asString ?: "",
-                                                    cedula = user.get("cedula")?.takeIf { !it.isJsonNull }?.asString,
-                                                    correo = user.get("correo")?.asString ?: "",
-                                                    telefono = user.get("telefono")?.asString ?: "",
-                                                    rol = rol,
-                                                    fotoPerfilUrl = user.get("fotoPerfilUrl")?.takeIf { !it.isJsonNull }?.asString,
-                                                    estado = user.get("estado")?.asString ?: "activo"
-                                                )
+                                            val userData = UserData(
+                                                id = user.get("id")?.asString ?: "",
+                                                nombre = user.get("nombre")?.asString ?: "",
+                                                apellido = user.get("apellido")?.asString ?: "",
+                                                cedula = user.get("cedula")?.takeIf { !it.isJsonNull }?.asString,
+                                                correo = user.get("correo")?.asString ?: "",
+                                                telefono = user.get("telefono")?.asString ?: "",
+                                                rol = rol,
+                                                fotoPerfilUrl = user.get("fotoPerfilUrl")?.takeIf { !it.isJsonNull }?.asString,
+                                                estado = user.get("estado")?.asString ?: "activo"
+                                            )
 
-                                                // Para profesores, mostrar diálogo de mantenimiento después de seleccionar avatar
-                                                if (rol == "profesor" || rol == "docente") {
-                                                    isLoading = false
-                                                    // Navegar a avatars primero
-                                                    navController.navigate("avatar_selection/$token/${userData.fotoPerfilUrl ?: "null"}") {
-                                                        popUpTo("login") { inclusive = true }
-                                                    }
-                                                } else if (rol == "padre") {
-                                                    // Padres van directo a avatars en primer inicio
+                                            when (rol) {
+                                                "profesor", "docente" -> {
+                                                    // Guardar datos y navegar
                                                     onLoginSuccess(token, userData)
-                                                    navController.navigate("avatar_selection/$token/${userData.fotoPerfilUrl ?: "null"}") {
-                                                        popUpTo("login") { inclusive = true }
+
+                                                    if (primerInicioSesion) {
+                                                        // Primer inicio: ir a selección de avatar
+                                                        navController.navigate("avatar_selection/$token/${userData.fotoPerfilUrl ?: "null"}") {
+                                                            popUpTo("login") { inclusive = true }
+                                                        }
+                                                    } else {
+                                                        // Login normal: ir al screen del profesor definido en MainActivity
+                                                        navController.navigate("profesor_screen") {
+                                                            popUpTo("login") { inclusive = true }
+                                                        }
                                                     }
-                                                } else {
+                                                    isLoading = false
+                                                }
+
+                                                "padre" -> {
+                                                    onLoginSuccess(token, userData)
+                                                    isLoading = false
+                                                }
+
+                                                else -> {
                                                     errorMessage = "Rol no autorizado: $rol"
                                                     isLoading = false
                                                 }
-                                            } else {
-                                                // 🔄 NO ES PRIMER INICIO - Flujo normal por rol
-                                                when (rol) {
-                                                    "profesor", "docente" -> {
-                                                        isLoading = false
-                                                        showMaintenanceDialog = true
-                                                    }
-                                                    "padre" -> {
-                                                        val userData = UserData(
-                                                            id = user.get("id")?.asString ?: "",
-                                                            nombre = user.get("nombre")?.asString ?: "",
-                                                            apellido = user.get("apellido")?.asString ?: "",
-                                                            cedula = user.get("cedula")?.takeIf { !it.isJsonNull }?.asString,
-                                                            correo = user.get("correo")?.asString ?: "",
-                                                            telefono = user.get("telefono")?.asString ?: "",
-                                                            rol = rol,
-                                                            fotoPerfilUrl = user.get("fotoPerfilUrl")?.takeIf { !it.isJsonNull }?.asString,
-                                                            estado = user.get("estado")?.asString ?: "activo"
-                                                        )
-                                                        onLoginSuccess(token, userData)
-                                                    }
-                                                    else -> {
-                                                        errorMessage = "Rol no autorizado: $rol"
-                                                        isLoading = false
-                                                    }
-                                                }
-                                            }
+                                        }
                                         } else {
                                             errorMessage = "Respuesta del servidor inválida"
                                             isLoading = false
@@ -674,108 +656,5 @@ fun LoginScreen(
                 )
             }
         }
-    }
-
-    // Diálogo de mantenimiento
-    if (showMaintenanceDialog) {
-        AlertDialog(
-            onDismissRequest = { showMaintenanceDialog = false },
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(90.dp)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    Naranja.copy(alpha = 0.2f),
-                                    Naranja.copy(alpha = 0.08f)
-                                )
-                            ),
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Construction,
-                        contentDescription = "Mantenimiento",
-                        tint = Naranja,
-                        modifier = Modifier.size(44.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    text = "En Mantenimiento",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 24.sp
-                    ),
-                    textAlign = TextAlign.Center,
-                    color = FondoOscuroPrimario
-                )
-            },
-            text = {
-                Column(modifier = Modifier.padding(vertical = 8.dp)) {
-                    Text(
-                        text = "Estimado Profesor,",
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = FondoOscuroPrimario
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "La aplicación móvil para docentes está en mantenimiento.",
-                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                        color = GrisOscuro
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = AzulCielo.copy(alpha = 0.1f)
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Computer,
-                                contentDescription = null,
-                                tint = AzulCielo,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Accede desde la plataforma web para gestionar tus cursos.",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.Medium
-                                ),
-                                color = AzulCielo
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showMaintenanceDialog = false
-                        isLoading = false
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AzulCielo),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
-                ) {
-                    Text("Entendido", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                }
-            },
-            containerColor = Color.White,
-            shape = RoundedCornerShape(28.dp)
-        )
     }
 }

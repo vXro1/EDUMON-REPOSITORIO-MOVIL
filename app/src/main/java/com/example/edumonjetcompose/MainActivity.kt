@@ -2,6 +2,7 @@ package com.example.edumonjetcompose
 
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
@@ -15,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,9 +24,9 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.example.edumonjetcompose.data.UserPreferences
+import com.example.edumonjetcompose.network.ApiService
 import com.example.edumonjetcompose.ui.*
-import com.example.edumonjetcompose.ui.screens.CalendarioScreen
-import com.example.edumonjetcompose.ui.screens.HomeScreenPadre
+import com.example.edumonjetcompose.ui.screens.*
 import com.example.edumonjetcompose.ui.theme.EDUMONTheme
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-// Colores de la aplicación
+// 🎨 Colores de la app
 val AzulCielo = Color(0xFF00B9F0)
 val VerdeLima = Color(0xFF7AD107)
 val Fucsia = Color(0xFFFE327B)
@@ -40,7 +42,6 @@ val Celeste = Color(0xFF01C9F4)
 val Naranja = Color(0xFFFA6D00)
 
 class MainActivity : ComponentActivity() {
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -50,6 +51,7 @@ class MainActivity : ComponentActivity() {
             EDUMONTheme {
                 val navController = rememberNavController()
                 val scope = rememberCoroutineScope()
+                val context = LocalContext.current
 
                 var startDestination by remember { mutableStateOf<String?>(null) }
                 var currentToken by remember { mutableStateOf<String?>(null) }
@@ -57,6 +59,63 @@ class MainActivity : ComponentActivity() {
                 var currentPadreId by remember { mutableStateOf<String?>(null) }
                 var isLoading by remember { mutableStateOf(true) }
 
+                // Función para recargar datos del usuario
+                suspend fun reloadUserData(token: String): UserData? {
+                    return try {
+                        Log.d("MainActivity", "🔄 Recargando datos del usuario con token...")
+
+                        val response = withContext(Dispatchers.IO) {
+                            ApiService.getUserProfile(token)
+                        }
+
+                        if (response.isSuccessful) {
+                            val body = response.body()
+                            val userObj = body?.getAsJsonObject("user") ?: body
+
+                            if (userObj != null) {
+                                val userData = UserData(
+                                    id = userObj.get("id")?.asString ?: userObj.get("_id")?.asString ?: "",
+                                    nombre = userObj.get("nombre")?.asString ?: "",
+                                    apellido = userObj.get("apellido")?.asString ?: "",
+                                    correo = userObj.get("correo")?.asString ?: "",
+                                    telefono = userObj.get("telefono")?.asString ?: "",
+                                    cedula = userObj.get("cedula")?.takeIf { !it.isJsonNull }?.asString,
+                                    rol = userObj.get("rol")?.asString ?: "",
+                                    fotoPerfilUrl = userObj.get("fotoPerfilUrl")?.takeIf { !it.isJsonNull }?.asString,
+                                    estado = userObj.get("estado")?.asString ?: "activo",
+                                )
+
+                                Log.d("MainActivity", """
+                                    ✅ Datos del usuario recargados:
+                                    - ID: ${userData.id}
+                                    - Nombre: ${userData.nombre} ${userData.apellido}
+                                    - Rol: ${userData.rol}
+                                    - Cédula: ${if (!userData.cedula.isNullOrBlank()) "Presente" else "Vacía"}
+                                    - Avatar: ${if (!userData.fotoPerfilUrl.isNullOrBlank()) "Presente" else "Vacío"}
+                                """.trimIndent())
+
+                                // Guardar datos actualizados
+                                withContext(Dispatchers.IO) {
+                                    userPrefs.saveUserId(userData.id)
+                                    userPrefs.savePadreId(userData.id)
+                                }
+
+                                userData
+                            } else {
+                                Log.e("MainActivity", "❌ userObj es null")
+                                null
+                            }
+                        } else {
+                            Log.e("MainActivity", "❌ Error al recargar perfil: ${response.code()}")
+                            null
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "❌ Excepción al recargar datos", e)
+                        null
+                    }
+                }
+
+                // 🚀 Inicialización
                 LaunchedEffect(Unit) {
                     delay(1000)
                     val token = withContext(Dispatchers.IO) { userPrefs.getToken() }
@@ -64,12 +123,19 @@ class MainActivity : ComponentActivity() {
                     currentToken = token
                     currentPadreId = padreId
 
+                    // Si hay token, cargar datos del usuario
+                    if (!token.isNullOrEmpty()) {
+                        currentUserData = reloadUserData(token)
+                        Log.d("MainActivity", "📱 Datos cargados en inicio - UserData: ${currentUserData?.nombre}")
+                    }
+
                     startDestination = if (!token.isNullOrEmpty()) "home" else "login"
 
                     Log.d("MainActivity", """
                         App iniciada:
-                        - Token: ${if (!token.isNullOrEmpty()) "Presente" else "Vacío"}
+                        - Token: ${if (!token.isNullOrEmpty()) "Presente (${token.take(20)}...)" else "Vacío"}
                         - PadreId: $padreId
+                        - UserData: ${currentUserData?.nombre ?: "null"}
                         - StartDestination: $startDestination
                     """.trimIndent())
 
@@ -77,6 +143,7 @@ class MainActivity : ComponentActivity() {
                     isLoading = false
                 }
 
+                // Pantalla de carga inicial
                 AnimatedVisibility(
                     visible = isLoading,
                     exit = fadeOut(animationSpec = tween(600))
@@ -84,6 +151,7 @@ class MainActivity : ComponentActivity() {
                     ModernSplashScreen()
                 }
 
+                // Contenido principal
                 AnimatedVisibility(
                     visible = !isLoading && startDestination != null,
                     enter = fadeIn(animationSpec = tween(600))
@@ -123,29 +191,41 @@ class MainActivity : ComponentActivity() {
                                 navController = navController,
                                 onLoginSuccess = { token, userData ->
                                     scope.launch {
-                                        userPrefs.saveToken(token)
-                                        userPrefs.savePadreId(userData.id)
+                                        withContext(Dispatchers.IO) {
+                                            userPrefs.saveToken(token)
+                                            userPrefs.saveUserId(userData.id)
+                                            userPrefs.savePadreId(userData.id)
+                                        }
 
                                         currentToken = token
                                         currentUserData = userData
                                         currentPadreId = userData.id
 
-                                        Log.d("Login", "Login exitoso - UserId: ${userData.id}")
+                                        Log.d("Login", """
+                                            Login exitoso:
+                                            - UserId: ${userData.id}
+                                            - Rol: ${userData.rol}
+                                            - Cédula: ${if (!userData.cedula.isNullOrBlank()) "Presente" else "Vacía"}
+                                            - Avatar: ${if (!userData.fotoPerfilUrl.isNullOrBlank()) "Presente" else "Vacío"}
+                                        """.trimIndent())
 
                                         delay(200)
                                         when {
                                             userData.cedula.isNullOrBlank() -> {
+                                                Log.d("Login", "➡️ Navegando a registro (falta cédula)")
                                                 val userDataJson = Gson().toJson(userData)
                                                 navController.navigate("register/$token/$userDataJson") {
                                                     popUpTo("login") { inclusive = true }
                                                 }
                                             }
                                             userData.fotoPerfilUrl.isNullOrBlank() -> {
+                                                Log.d("Login", "➡️ Navegando a avatar (falta foto)")
                                                 navController.navigate("avatar_selection/$token/null") {
                                                     popUpTo("login") { inclusive = true }
                                                 }
                                             }
                                             else -> {
+                                                Log.d("Login", "➡️ Navegando a home (perfil completo)")
                                                 navController.navigate("home") {
                                                     popUpTo("login") { inclusive = true }
                                                 }
@@ -167,16 +247,16 @@ class MainActivity : ComponentActivity() {
                                     defaultValue = "null"
                                 }
                             )
-                        ) { backStackEntry ->
-                            val token = backStackEntry.arguments?.getString("token") ?: ""
-                            val userDataJson = backStackEntry.arguments?.getString("userDataJson")
-                            val userData = if (userDataJson != null && userDataJson != "null") {
-                                try {
+                        ) { entry ->
+                            val token = entry.arguments?.getString("token") ?: ""
+                            val userDataJson = entry.arguments?.getString("userDataJson")
+                            val userData = try {
+                                if (!userDataJson.isNullOrBlank() && userDataJson != "null")
                                     Gson().fromJson(userDataJson, UserData::class.java)
-                                } catch (e: Exception) {
-                                    null
-                                }
-                            } else null
+                                else null
+                            } catch (e: Exception) {
+                                null
+                            }
 
                             RegisterScreen(
                                 navController = navController,
@@ -210,20 +290,42 @@ class MainActivity : ComponentActivity() {
                                     defaultValue = "null"
                                 }
                             )
-                        ) { backStackEntry ->
-                            val token = backStackEntry.arguments?.getString("token") ?: ""
-                            val currentAvatar = backStackEntry.arguments?.getString("currentAvatar")
+                        ) { entry ->
+                            val token = entry.arguments?.getString("token") ?: ""
+                            val currentAvatar = entry.arguments?.getString("currentAvatar")
                                 ?.takeIf { it != "null" }
 
                             AvatarSelectionScreen(
                                 navController = navController,
                                 token = token,
                                 currentAvatarUrl = currentAvatar,
-                                onAvatarSelected = {
+                                onAvatarSelected = { avatarUrl ->
                                     scope.launch {
-                                        delay(200)
-                                        navController.navigate("home") {
-                                            popUpTo("avatar_selection/{token}/{currentAvatar}") { inclusive = true }
+                                        Log.d("Avatar", "✅ Avatar seleccionado: $avatarUrl")
+
+                                        // Recargar datos del usuario después de guardar
+                                        val updatedUserData = reloadUserData(token)
+
+                                        if (updatedUserData != null) {
+                                            currentUserData = updatedUserData
+                                            currentToken = token
+                                            currentPadreId = updatedUserData.id
+
+                                            Log.d("Avatar", "✅ Datos actualizados, navegando a home")
+
+                                            delay(300)
+                                            navController.navigate("home") {
+                                                popUpTo(0) { inclusive = true }
+                                            }
+                                        } else {
+                                            Log.e("Avatar", "❌ Error al recargar datos")
+                                            withContext(Dispatchers.Main) {
+                                                Toast.makeText(
+                                                    context,
+                                                    "Error al actualizar perfil. Intenta nuevamente.",
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
                                         }
                                     }
                                 }
@@ -232,40 +334,127 @@ class MainActivity : ComponentActivity() {
 
                         // ==================== HOME ====================
                         composable("home") {
-                            val token = currentToken ?: ""
-                            HomeScreenPadre(
-                                token = token,
-                                onNavigateToCurso = { cursoId ->
-                                    navController.navigate("infoCurso/$cursoId")
-                                },
-                                onLogout = {
-                                    scope.launch {
-                                        userPrefs.clearToken()
-                                        userPrefs.clearPadreId()
-                                        currentToken = null
-                                        currentPadreId = null
-                                        delay(200)
-                                        navController.navigate("login") {
-                                            popUpTo("home") { inclusive = true }
+                            val token = currentToken
+                            var userData by remember { mutableStateOf(currentUserData) }
+                            var isLoadingHome by remember { mutableStateOf(userData == null) }
+
+                            // Recargar datos si no están disponibles
+                            LaunchedEffect(Unit) {
+                                Log.d("Home", """
+                                    🏠 Entrando a Home:
+                                    - Token presente: ${!token.isNullOrEmpty()}
+                                    - UserData presente: ${userData != null}
+                                    - Rol: ${userData?.rol}
+                                """.trimIndent())
+
+                                if (token.isNullOrEmpty()) {
+                                    Log.e("Home", "❌ Token vacío, redirigiendo a login")
+                                    navController.navigate("login") {
+                                        popUpTo(0) { inclusive = true }
+                                    }
+                                    return@LaunchedEffect
+                                }
+
+                                if (userData == null) {
+                                    Log.d("Home", "🔄 UserData es null, recargando desde API...")
+                                    isLoadingHome = true
+
+                                    val reloadedData = reloadUserData(token)
+
+                                    if (reloadedData != null) {
+                                        userData = reloadedData
+                                        currentUserData = reloadedData
+                                        Log.d("Home", "✅ Datos recargados exitosamente")
+                                    } else {
+                                        Log.e("Home", "❌ Error al recargar datos, redirigiendo a login")
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(
+                                                context,
+                                                "Error al cargar perfil. Inicia sesión nuevamente.",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            navController.navigate("login") {
+                                                popUpTo(0) { inclusive = true }
+                                            }
+                                        }
+                                        return@LaunchedEffect
+                                    }
+
+                                    isLoadingHome = false
+                                }
+                            }
+
+                            when {
+                                isLoadingHome -> {
+                                    ModernLoadingIndicator()
+                                }
+                                userData == null -> {
+                                    // Ya se maneja en el LaunchedEffect
+                                    Box(modifier = Modifier.fillMaxSize())
+                                }
+                                userData!!.rol.equals("profesor", true) ||
+                                        userData!!.rol.equals("docente", true) -> {
+                                    Log.d("Home", "👨‍🏫 Mostrando pantalla de profesor")
+                                    ProfesorHomeScreen(navController = navController)
+                                }
+                                userData!!.rol.equals("padre", true) -> {
+                                    Log.d("Home", "👨‍👩‍👧 Mostrando pantalla de padre")
+                                    HomeScreenPadre(
+                                        token = token ?: "",
+                                        onNavigateToCurso = { cursoId ->
+                                            navController.navigate("infoCurso/$cursoId")
+                                        },
+                                        onLogout = {
+                                            scope.launch {
+                                                withContext(Dispatchers.IO) {
+                                                    userPrefs.clearAll()
+                                                }
+                                                currentToken = null
+                                                currentUserData = null
+                                                currentPadreId = null
+                                                delay(200)
+                                                navController.navigate("login") {
+                                                    popUpTo(0) { inclusive = true }
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                                else -> {
+                                    Log.e("Home", "❌ Rol desconocido: ${userData!!.rol}")
+                                    LaunchedEffect(Unit) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(
+                                                context,
+                                                "Rol de usuario no válido",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                            navController.navigate("login") {
+                                                popUpTo(0) { inclusive = true }
+                                            }
                                         }
                                     }
                                 }
-                            )
+                            }
                         }
 
                         // ==================== CURSO ====================
-                        composable("infoCurso/{id}") { backStackEntry ->
-                            val cursoId = backStackEntry.arguments?.getString("id") ?: ""
+                        composable("infoCurso/{id}") { entry ->
+                            val cursoId = entry.arguments?.getString("id") ?: ""
                             val token = currentToken ?: ""
                             InfoCursoScreen(
                                 navController = navController,
                                 cursoId = cursoId,
                                 token = token,
                                 onNavigateToTarea = { tareaId ->
-                                    Log.d("Navigation", "Navegando a tarea: $tareaId")
                                     navController.navigate("tarea_entrega/$tareaId")
                                 }
                             )
+                        }
+
+                        // ==================== PROFESOR HOME ====================
+                        composable("profesor_home") {
+                            ProfesorHomeScreen(navController = navController)
                         }
 
                         // ==================== ENTREGA DE TAREA ====================
@@ -274,166 +463,75 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(
                                 navArgument("tareaId") { type = NavType.StringType }
                             )
-                        ) { backStackEntry ->
-                            val tareaId = backStackEntry.arguments?.getString("tareaId") ?: ""
-
+                        ) { entry ->
+                            val tareaId = entry.arguments?.getString("tareaId") ?: ""
                             var token by remember { mutableStateOf("") }
                             var padreId by remember { mutableStateOf("") }
                             var isLoadingData by remember { mutableStateOf(true) }
 
                             LaunchedEffect(Unit) {
-                                token = withContext(Dispatchers.IO) {
-                                    userPrefs.getToken() ?: ""
-                                }
-                                padreId = withContext(Dispatchers.IO) {
-                                    userPrefs.getPadreId() ?: ""
-                                }
-
-                                Log.d("TareaEntregaScreen", "tareaId: $tareaId, padreId: $padreId")
-
+                                token = withContext(Dispatchers.IO) { userPrefs.getToken() ?: "" }
+                                padreId = withContext(Dispatchers.IO) { userPrefs.getPadreId() ?: "" }
                                 delay(300)
                                 isLoadingData = false
                             }
 
-                            AnimatedVisibility(
-                                visible = isLoadingData,
-                                exit = fadeOut(animationSpec = tween(300))
-                            ) {
-                                ModernLoadingIndicator()
-                            }
-
-                            AnimatedVisibility(
-                                visible = !isLoadingData && token.isNotEmpty() && padreId.isNotEmpty(),
-                                enter = fadeIn(animationSpec = tween(300))
-                            ) {
-                                TareaEntregaScreen(
-                                    navController = navController,
-                                    tareaId = tareaId,
-                                    token = token,
-                                    padreId = padreId
-                                )
-                            }
+                            if (isLoadingData) ModernLoadingIndicator()
+                            else TareaEntregaScreen(
+                                navController = navController,
+                                tareaId = tareaId,
+                                token = token,
+                                padreId = padreId
+                            )
                         }
 
-                        // ==================== FORO (LISTA) ====================
+                        // ==================== FORO ====================
                         composable(
                             route = "foro/{cursoId}",
                             arguments = listOf(navArgument("cursoId") { type = NavType.StringType })
-                        ) { backStackEntry ->
-                            val cursoId = backStackEntry.arguments?.getString("cursoId") ?: ""
-
+                        ) { entry ->
+                            val cursoId = entry.arguments?.getString("cursoId") ?: ""
                             var token by remember { mutableStateOf("") }
                             var userId by remember { mutableStateOf("") }
-                            var isLoadingData by remember { mutableStateOf(true) }
 
                             LaunchedEffect(Unit) {
-                                token = withContext(Dispatchers.IO) {
-                                    userPrefs.getToken() ?: ""
-                                }
-                                userId = withContext(Dispatchers.IO) {
-                                    userPrefs.getUserId() ?: ""
-                                }
-                                delay(200)
-                                isLoadingData = false
+                                token = withContext(Dispatchers.IO) { userPrefs.getToken() ?: "" }
+                                userId = withContext(Dispatchers.IO) { userPrefs.getUserId() ?: "" }
                             }
 
-                            AnimatedVisibility(
-                                visible = isLoadingData,
-                                exit = fadeOut(animationSpec = tween(300))
-                            ) {
-                                ModernLoadingIndicator()
-                            }
-
-                            AnimatedVisibility(
-                                visible = !isLoadingData && token.isNotEmpty(),
-                                enter = fadeIn(animationSpec = tween(300))
-                            ) {
-                                ForoScreen(
-                                    navController = navController,
-                                    cursoId = cursoId,
-                                    token = token,
-                                    userId = userId
-                                )
-                            }
+                            ForoScreen(navController, cursoId, token, userId)
                         }
 
                         // ==================== FORO DETALLE ====================
                         composable(
                             route = "foro_detalle/{foroId}",
                             arguments = listOf(navArgument("foroId") { type = NavType.StringType })
-                        ) { backStackEntry ->
-                            val foroId = backStackEntry.arguments?.getString("foroId") ?: ""
-
+                        ) { entry ->
+                            val foroId = entry.arguments?.getString("foroId") ?: ""
                             var token by remember { mutableStateOf("") }
                             var userId by remember { mutableStateOf("") }
-                            var isLoadingData by remember { mutableStateOf(true) }
 
                             LaunchedEffect(Unit) {
-                                token = withContext(Dispatchers.IO) {
-                                    userPrefs.getToken() ?: ""
-                                }
-                                userId = withContext(Dispatchers.IO) {
-                                    userPrefs.getUserId() ?: ""
-                                }
-                                delay(200)
-                                isLoadingData = false
+                                token = withContext(Dispatchers.IO) { userPrefs.getToken() ?: "" }
+                                userId = withContext(Dispatchers.IO) { userPrefs.getUserId() ?: "" }
                             }
 
-                            AnimatedVisibility(
-                                visible = isLoadingData,
-                                exit = fadeOut(animationSpec = tween(300))
-                            ) {
-                                ModernLoadingIndicator()
-                            }
-
-                            AnimatedVisibility(
-                                visible = !isLoadingData && token.isNotEmpty(),
-                                enter = fadeIn(animationSpec = tween(300))
-                            ) {
-                                ForoDetalleScreen(
-                                    navController = navController,
-                                    foroId = foroId,
-                                    token = token,
-                                    userId = userId
-                                )
-                            }
+                            ForoDetalleScreen(navController, foroId, token, userId)
                         }
 
                         // ==================== CALENDARIO ====================
                         composable(
                             route = "calendario/{cursoId}",
                             arguments = listOf(navArgument("cursoId") { type = NavType.StringType })
-                        ) { backStackEntry ->
-                            val cursoId = backStackEntry.arguments?.getString("cursoId") ?: ""
-
+                        ) { entry ->
+                            val cursoId = entry.arguments?.getString("cursoId") ?: ""
                             var token by remember { mutableStateOf("") }
-                            var isLoadingData by remember { mutableStateOf(true) }
 
                             LaunchedEffect(Unit) {
-                                token = withContext(Dispatchers.IO) {
-                                    userPrefs.getToken() ?: ""
-                                }
-                                delay(200)
-                                isLoadingData = false
+                                token = withContext(Dispatchers.IO) { userPrefs.getToken() ?: "" }
                             }
 
-                            AnimatedVisibility(
-                                visible = isLoadingData,
-                                exit = fadeOut(animationSpec = tween(300))
-                            ) {
-                                ModernLoadingIndicator()
-                            }
-
-                            AnimatedVisibility(
-                                visible = !isLoadingData && token.isNotEmpty(),
-                                enter = fadeIn(animationSpec = tween(300))
-                            ) {
-                                CalendarioScreen(
-                                    navController = navController,
-                                    cursoId = cursoId,
-                                    token = token
-                                )
-                            }
+                            CalendarioScreen(navController, cursoId, token)
                         }
                     }
                 }
@@ -442,10 +540,11 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// ==================== SPLASH Y LOADING ====================
+
 @Composable
 fun ModernSplashScreen() {
     val infiniteTransition = rememberInfiniteTransition(label = "splash")
-
     val scale by infiniteTransition.animateFloat(
         initialValue = 0.92f,
         targetValue = 1.08f,
@@ -478,17 +577,13 @@ fun ModernSplashScreen() {
                     shape = CircleShape,
                     color = Celeste.copy(alpha = 0.15f)
                 ) {}
-
                 Surface(
                     modifier = Modifier.size(140.dp),
                     shape = CircleShape,
                     color = AzulCielo,
                     shadowElevation = 16.dp
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier.fillMaxSize()
-                    ) {
+                    Box(contentAlignment = Alignment.Center) {
                         Text(
                             text = "E",
                             fontSize = 64.sp,
@@ -498,9 +593,7 @@ fun ModernSplashScreen() {
                     }
                 }
             }
-
             Spacer(modifier = Modifier.height(48.dp))
-
             Text(
                 text = "EDUMON",
                 fontSize = 36.sp,
@@ -508,9 +601,7 @@ fun ModernSplashScreen() {
                 color = AzulCielo,
                 letterSpacing = 3.sp
             )
-
             Spacer(modifier = Modifier.height(12.dp))
-
             Text(
                 text = "Plataforma Educativa",
                 fontSize = 15.sp,
@@ -518,13 +609,9 @@ fun ModernSplashScreen() {
                 color = Color(0xFF616161),
                 letterSpacing = 1.2.sp
             )
-
             Spacer(modifier = Modifier.height(56.dp))
-
             LinearProgressIndicator(
-                modifier = Modifier
-                    .width(220.dp)
-                    .height(3.dp),
+                modifier = Modifier.width(220.dp).height(3.dp),
                 color = VerdeLima,
                 trackColor = Color(0xFFF0F0F0)
             )
@@ -551,22 +638,17 @@ fun ModernLoadingIndicator() {
                 strokeWidth = 5.dp,
                 trackColor = Color(0xFFF0F0F0)
             )
-
             Spacer(modifier = Modifier.height(28.dp))
-
             Text(
                 text = "Cargando",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = AzulCielo
             )
-
             Spacer(modifier = Modifier.height(8.dp))
-
             Text(
                 text = "Por favor espera un momento",
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Normal,
                 color = Color(0xFF757575)
             )
         }

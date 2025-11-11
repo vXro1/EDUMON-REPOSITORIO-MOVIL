@@ -21,7 +21,7 @@ class UserPreferences(private val context: Context) {
         // Keys para DataStore
         private val TOKEN_KEY = stringPreferencesKey("user_token")
         private val USER_ID_KEY = stringPreferencesKey("user_id")
-        private val PADRE_ID_KEY = stringPreferencesKey("padre_id") // 🔥 NUEVO
+        private val PADRE_ID_KEY = stringPreferencesKey("padre_id")
         private val USER_NAME_KEY = stringPreferencesKey("user_name")
         private val USER_LASTNAME_KEY = stringPreferencesKey("user_lastname")
         private val USER_CEDULA_KEY = stringPreferencesKey("user_cedula")
@@ -31,6 +31,7 @@ class UserPreferences(private val context: Context) {
         private val USER_PHOTO_KEY = stringPreferencesKey("user_photo")
         private val USER_STATUS_KEY = stringPreferencesKey("user_status")
         private val IS_LOGGED_IN_KEY = booleanPreferencesKey("is_logged_in")
+        private val PRIMER_INICIO_KEY = booleanPreferencesKey("primer_inicio_sesion")
     }
 
     // ==================== TOKEN ====================
@@ -61,7 +62,27 @@ class UserPreferences(private val context: Context) {
         preferences[TOKEN_KEY]
     }
 
-    // ==================== PADRE ID ==================== 🔥 NUEVO
+    // ==================== USER ID ====================
+
+    /**
+     * Guardar ID del usuario
+     */
+    suspend fun saveUserId(userId: String) {
+        context.dataStore.edit { preferences ->
+            preferences[USER_ID_KEY] = userId
+        }
+    }
+
+    /**
+     * Obtener ID del usuario
+     */
+    suspend fun getUserId(): String? {
+        return context.dataStore.data.map { preferences ->
+            preferences[USER_ID_KEY]
+        }.firstOrNull()
+    }
+
+    // ==================== PADRE ID ====================
 
     /**
      * Guardar ID del padre (para entregas de tareas)
@@ -105,7 +126,7 @@ class UserPreferences(private val context: Context) {
     suspend fun saveUserData(userData: UserData) {
         context.dataStore.edit { preferences ->
             preferences[USER_ID_KEY] = userData.id
-            preferences[PADRE_ID_KEY] = userData.id // 🔥 NUEVO - También guardar como padreId
+            preferences[PADRE_ID_KEY] = userData.id
             preferences[USER_NAME_KEY] = userData.nombre
             preferences[USER_LASTNAME_KEY] = userData.apellido
             userData.cedula?.let { preferences[USER_CEDULA_KEY] = it }
@@ -130,6 +151,7 @@ class UserPreferences(private val context: Context) {
         val telefono = preferences[USER_PHONE_KEY] ?: return null
         val rol = preferences[USER_ROL_KEY] ?: return null
         val estado = preferences[USER_STATUS_KEY] ?: "activo"
+        val primerInicio = preferences[PRIMER_INICIO_KEY] ?: true
 
         return UserData(
             id = id,
@@ -140,7 +162,7 @@ class UserPreferences(private val context: Context) {
             telefono = telefono,
             rol = rol,
             fotoPerfilUrl = preferences[USER_PHOTO_KEY],
-            estado = estado
+            estado = estado,
         )
     }
 
@@ -155,6 +177,7 @@ class UserPreferences(private val context: Context) {
         val telefono = preferences[USER_PHONE_KEY] ?: return@map null
         val rol = preferences[USER_ROL_KEY] ?: return@map null
         val estado = preferences[USER_STATUS_KEY] ?: "activo"
+        val primerInicio = preferences[PRIMER_INICIO_KEY] ?: true
 
         UserData(
             id = id,
@@ -165,7 +188,7 @@ class UserPreferences(private val context: Context) {
             telefono = telefono,
             rol = rol,
             fotoPerfilUrl = preferences[USER_PHOTO_KEY],
-            estado = estado
+            estado = estado,
         )
     }
 
@@ -177,19 +200,10 @@ class UserPreferences(private val context: Context) {
     suspend fun saveUserInfo(userId: String, userName: String, userRol: String) {
         context.dataStore.edit { preferences ->
             preferences[USER_ID_KEY] = userId
-            preferences[PADRE_ID_KEY] = userId // 🔥 NUEVO - También como padreId
+            preferences[PADRE_ID_KEY] = userId
             preferences[USER_NAME_KEY] = userName
             preferences[USER_ROL_KEY] = userRol
         }
-    }
-
-    /**
-     * Obtener ID del usuario
-     */
-    suspend fun getUserId(): String? {
-        return context.dataStore.data.map { preferences ->
-            preferences[USER_ID_KEY]
-        }.firstOrNull()
     }
 
     /**
@@ -316,7 +330,7 @@ class UserPreferences(private val context: Context) {
     suspend fun clearToken() {
         context.dataStore.edit { preferences ->
             preferences.remove(TOKEN_KEY)
-            preferences.remove(PADRE_ID_KEY) // 🔥 NUEVO - También limpiar padreId
+            preferences.remove(PADRE_ID_KEY)
             preferences[IS_LOGGED_IN_KEY] = false
         }
     }

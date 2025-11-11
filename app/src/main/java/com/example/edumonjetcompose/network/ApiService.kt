@@ -199,6 +199,52 @@ interface ApiRoutes {
         @Path("id") id: String,
         @Part archivoCSV: MultipartBody.Part
     ): Response<JsonObject>
+    @Multipart
+    @POST("cursos")
+    suspend fun createCurso(
+        @Header("Authorization") token: String,
+        @Part("nombre") nombre: RequestBody,
+        @Part("descripcion") descripcion: RequestBody,
+        @Part("docenteId") docenteId: RequestBody,
+        @Part fotoPortada: MultipartBody.Part? = null
+    ): Response<JsonObject>
+
+    /**
+     * Obtener todos los cursos con filtros y paginación
+     */
+    @GET("cursos")
+    suspend fun getCursos(
+        @Header("Authorization") token: String,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 10,
+        @Query("estado") estado: String? = null,
+        @Query("docenteId") docenteId: String? = null
+    ): Response<JsonObject>
+
+    /**
+     * Actualizar un curso (con imagen opcional)
+     */
+    @Multipart
+    @PUT("cursos/{id}")
+    suspend fun updateCurso(
+        @Header("Authorization") token: String,
+        @Path("id") cursoId: String,
+        @Part("nombre") nombre: RequestBody? = null,
+        @Part("descripcion") descripcion: RequestBody? = null,
+        @Part fotoPortada: MultipartBody.Part? = null
+    ): Response<JsonObject>
+    /**
+     * Obtener participantes de un curso
+     */
+    @GET("cursos/{id}/participantes")
+    suspend fun getParticipantesCurso(
+        @Header("Authorization") token: String,
+        @Path("id") cursoId: String,
+        @Query("etiqueta") etiqueta: String? = null,
+        @Query("search") search: String? = null,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 50
+    ): Response<JsonObject>
 
     // ==================== MÓDULOS ====================
     @POST("modulos")
@@ -363,7 +409,6 @@ interface ApiRoutes {
         @Path("id") entregaId: String
     ): Response<JsonObject>
 
-    // ✅ CORRECTO: Sin el prefijo "api/"
     @Multipart
     @POST("entregas")
     suspend fun crearEntregaMultipart(
@@ -506,7 +551,14 @@ interface ApiRoutes {
         @Header("Authorization") auth: String,
         @Path("id") mensajeId: String
     ): Response<JsonObject>
+    // ============================================
+    // ENDPOINTS DE CURSOS
+    // ============================================
+
+
+
 }
+
 
 // ---- ApiService: funciones de conveniencia utilizadas por la app ----
 object ApiService {
@@ -668,25 +720,10 @@ object ApiService {
 
         return api.updateCurso("Bearer $token", cursoId, fotoPortada, data)
     }
-
-    suspend fun archivarCurso(token: String, cursoId: String): Response<JsonObject> =
+    suspend fun deleteCurso(token: String, cursoId: String): Response<JsonObject> =
         api.archivarCurso("Bearer $token", cursoId)
 
-    suspend fun agregarParticipante(token: String, cursoId: String, usuarioId: String): Response<JsonObject> {
-        val body = JsonObject().apply {
-            addProperty("usuarioId", usuarioId)
-        }
-        return api.agregarParticipante("Bearer $token", cursoId, body)
-    }
 
-    suspend fun removerParticipante(token: String, cursoId: String, usuarioId: String): Response<JsonObject> =
-        api.removerParticipante("Bearer $token", cursoId, usuarioId)
-
-    suspend fun registrarUsuariosMasivo(token: String, cursoId: String, csvFile: File): Response<JsonObject> {
-        val requestBody = csvFile.asRequestBody("text/csv".toMediaTypeOrNull())
-        val csvPart = MultipartBody.Part.createFormData("archivoCSV", csvFile.name, requestBody)
-        return api.registrarUsuariosMasivo("Bearer $token", cursoId, csvPart)
-    }
 
     // ==================== MÓDULOS ====================
     suspend fun createModulo(
@@ -830,7 +867,7 @@ object ApiService {
             }
         }
 
-        Log.d("ApiService", "📤 Creando entrega (JSON)")
+        Log.d("ApiService", " Creando entrega (JSON)")
         Log.d("ApiService", "Body: $body")
 
         return api.crearEntrega("Bearer $token", body)
@@ -889,7 +926,7 @@ object ApiService {
             api.crearEntregaMultipart("Bearer $token", parts)
 
         } catch (e: Exception) {
-            Log.e("ApiService", "❌ Error en crearEntregaMultipart", e)
+            Log.e("ApiService", " Error en crearEntregaMultipart", e)
             throw e
         }
     }

@@ -64,7 +64,6 @@ fun AvatarSelectionScreen(
     var isSaving by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showSuccessDialog by remember { mutableStateOf(false) }
-    var showMaintenanceDialog by remember { mutableStateOf(false) }
 
     // Datos del usuario
     var userId by remember { mutableStateOf("") }
@@ -75,6 +74,7 @@ fun AvatarSelectionScreen(
     var cedula by remember { mutableStateOf("") }
     var contraseña by remember { mutableStateOf("") }
     var userRol by remember { mutableStateOf("") }
+    var primerInicioSesion by remember { mutableStateOf(true) }
 
     // Estados de validación
     var nombreError by remember { mutableStateOf<String?>(null) }
@@ -96,10 +96,10 @@ fun AvatarSelectionScreen(
     LaunchedEffect(Unit) {
         scope.launch {
             try {
-                Log.d("AvatarSelection", "Token recibido: ${token.take(20)}...")
+                Log.d("AvatarSelection", "🔑 Token recibido: ${token.take(20)}...")
 
                 val profileResponse = ApiService.getUserProfile(token)
-                Log.d("AvatarSelection", "Response code perfil: ${profileResponse.code()}")
+                Log.d("AvatarSelection", "📥 Response code perfil: ${profileResponse.code()}")
 
                 if (profileResponse.isSuccessful) {
                     val body = profileResponse.body()
@@ -110,6 +110,8 @@ fun AvatarSelectionScreen(
                         nombre = userObj.get("nombre")?.asString ?: ""
                         apellido = userObj.get("apellido")?.asString ?: ""
                         correo = userObj.get("correo")?.asString ?: ""
+                        userRol = userObj.get("rol")?.asString ?: ""
+                        primerInicioSesion = userObj.get("primerInicioSesion")?.asBoolean ?: true
 
                         // Extraer solo los 10 dígitos si viene con +57
                         val telefonoCompleto = userObj.get("telefono")?.asString ?: ""
@@ -120,7 +122,6 @@ fun AvatarSelectionScreen(
                         }
 
                         cedula = userObj.get("cedula")?.takeIf { !it.isJsonNull }?.asString ?: ""
-                        userRol = userObj.get("rol")?.asString ?: ""
 
                         // Cargar avatar actual si existe
                         val avatarActual = userObj.get("fotoPerfilUrl")?.asString
@@ -129,17 +130,23 @@ fun AvatarSelectionScreen(
                         }
 
                         Log.d("AvatarSelection", """
-                            Usuario cargado:
+                            ✅ Usuario cargado:
+                            - ID: $userId
                             - Nombre: $nombre $apellido
+                            - Rol: $userRol
                             - Teléfono: $telefono
+                            - Cédula: ${if (cedula.isNotEmpty()) "***" else "sin cédula"}
+                            - Primer inicio: $primerInicioSesion
                             - Avatar actual: $avatarActual
                         """.trimIndent())
                     }
                 } else {
                     val errorBody = profileResponse.errorBody()?.string()
                     errorMessage = "Error al cargar perfil (${profileResponse.code()}): $errorBody"
+                    Log.e("AvatarSelection", "❌ Error perfil: $errorMessage")
                 }
 
+                // Cargar avatares predeterminados
                 val avatarResponse = ApiService.getFotosPredeterminadas(token)
                 if (avatarResponse.isSuccessful) {
                     val body = avatarResponse.body()
@@ -156,15 +163,17 @@ fun AvatarSelectionScreen(
                         )
                     }
                     avatarList = avatares
+                    Log.d("AvatarSelection", "✅ ${avatares.size} avatares cargados")
                 } else {
                     val errorBody = avatarResponse.errorBody()?.string()
                     if (errorMessage == null) {
                         errorMessage = "Error al cargar avatares (${avatarResponse.code()})"
                     }
+                    Log.e("AvatarSelection", "❌ Error avatares: $errorBody")
                 }
             } catch (e: Exception) {
                 errorMessage = "Error de conexión: ${e.message}"
-                Log.e("AvatarSelection", "Error al cargar datos", e)
+                Log.e("AvatarSelection", "❌ Excepción al cargar datos", e)
             } finally {
                 isLoading = false
             }
@@ -330,7 +339,7 @@ fun AvatarSelectionScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    // Sección de Avatar - MOVIDA ARRIBA
+                    // Sección de Avatar
                     Text(
                         text = "Selecciona tu Avatar *",
                         style = MaterialTheme.typography.titleLarge.copy(
@@ -670,6 +679,7 @@ fun AvatarSelectionScreen(
                             var hasErrors = false
                             errorMessage = null
 
+                            // Validaciones
                             if (nombre.isBlank()) {
                                 nombreError = "El nombre es obligatorio"
                                 hasErrors = true
@@ -724,6 +734,7 @@ fun AvatarSelectionScreen(
                                 return@Button
                             }
 
+                            // Guardar datos
                             scope.launch {
                                 isSaving = true
                                 errorMessage = null
@@ -732,10 +743,17 @@ fun AvatarSelectionScreen(
                                     val telefonoCompleto = "+57$telefono"
 
                                     Log.d("AvatarSelection", """
-                                        💾 Guardando datos:
+                                        💾 Guardando datos del usuario:
+                                        - ID: $userId
+                                        - Rol: $userRol
+                                        - Nombre: $nombre $apellido
                                         - Teléfono completo: $telefonoCompleto
+                                        - Correo: $correo
+                                        - Cédula: ${if (cedula.isNotEmpty()) "***" else "vacío"}
+                                        - Avatar: $selectedAvatar
                                     """.trimIndent())
 
+                                    // 1. Actualizar datos del usuario
                                     val updateBody = JsonObject().apply {
                                         addProperty("nombre", nombre.trim())
                                         addProperty("apellido", apellido.trim())
@@ -746,7 +764,7 @@ fun AvatarSelectionScreen(
                                         addProperty("primerInicioSesion", false)
                                     }
 
-                                    Log.d("AvatarSelection", "📤 JSON enviado: $updateBody")
+                                    Log.d("AvatarSelection", "📤 JSON a enviar: $updateBody")
 
                                     val updateResponse = ApiService.updateUser(
                                         token = token,
@@ -754,19 +772,21 @@ fun AvatarSelectionScreen(
                                         body = updateBody
                                     )
 
-                                    Log.d("AvatarSelection", "📥 Response code: ${updateResponse.code()}")
+                                    Log.d("AvatarSelection", "📥 Response code usuario: ${updateResponse.code()}")
 
                                     if (!updateResponse.isSuccessful) {
                                         val errorBody = updateResponse.errorBody()?.string()
                                         Log.e("AvatarSelection", """
                                             ❌ Error al actualizar usuario:
                                             - Code: ${updateResponse.code()}
-                                            - Error: $errorBody
+                                            - Body: $errorBody
                                         """.trimIndent())
 
                                         errorMessage = when (updateResponse.code()) {
                                             400 -> "Datos inválidos. Verifica todos los campos."
+                                            401 -> "Sesión expirada. Inicia sesión nuevamente."
                                             404 -> "Usuario no encontrado."
+                                            409 -> "El correo o teléfono ya está registrado."
                                             500 -> "Error del servidor. Intenta nuevamente."
                                             else -> "Error al actualizar: ${updateResponse.code()}"
                                         }
@@ -776,7 +796,7 @@ fun AvatarSelectionScreen(
                                     }
 
                                     val responseBody = updateResponse.body()
-                                    Log.d("AvatarSelection", "✅ Usuario actualizado: $responseBody")
+                                    Log.d("AvatarSelection", "✅ Usuario actualizado exitosamente: $responseBody")
 
                                     // 2. Actualizar avatar
                                     Log.d("AvatarSelection", "📸 Actualizando avatar: $selectedAvatar")
@@ -786,31 +806,33 @@ fun AvatarSelectionScreen(
                                         fotoPredeterminadaUrl = selectedAvatar!!
                                     )
 
-                                    Log.d("AvatarSelection", "📥 Avatar response code: ${fotoResponse.code()}")
+                                    Log.d("AvatarSelection", "📥 Response code avatar: ${fotoResponse.code()}")
 
                                     if (fotoResponse.isSuccessful) {
                                         val fotoBody = fotoResponse.body()
-                                        Log.d("AvatarSelection", "✅ Avatar actualizado: $fotoBody")
+                                        Log.d("AvatarSelection", "✅ Avatar actualizado exitosamente: $fotoBody")
 
-                                        // Mostrar diálogo según rol
-                                        if (userRol == "profesor" || userRol == "docente") {
-                                            showMaintenanceDialog = true
-                                        } else {
-                                            showSuccessDialog = true
-                                        }
+                                        // Guardar avatar seleccionado en el callback
+                                        selectedAvatar?.let { onAvatarSelected(it) }
+
+                                        // Mostrar diálogo de éxito
+                                        showSuccessDialog = true
                                     } else {
                                         val errorBody = fotoResponse.errorBody()?.string()
                                         Log.e("AvatarSelection", """
-                                            ❌ Error al actualizar avatar:
+                                            ⚠️ Error al actualizar avatar:
                                             - Code: ${fotoResponse.code()}
-                                            - Error: $errorBody
+                                            - Body: $errorBody
                                         """.trimIndent())
 
-                                        errorMessage = "Datos guardados pero error al actualizar avatar: ${fotoResponse.code()}"
+                                        // Aún así mostrar éxito porque los datos se guardaron
+                                        errorMessage = "Datos guardados, pero error al actualizar avatar. Puedes cambiarlo después."
+                                        showSuccessDialog = true
                                     }
+
                                 } catch (e: Exception) {
                                     Log.e("AvatarSelection", "❌ Excepción al guardar", e)
-                                    errorMessage = "Error de conexión: ${e.message}"
+                                    errorMessage = "Error de conexión: ${e.localizedMessage ?: e.message}"
                                     e.printStackTrace()
                                 } finally {
                                     isSaving = false
@@ -870,7 +892,7 @@ fun AvatarSelectionScreen(
         }
     }
 
-    // Diálogo de éxito (padres)
+    // Diálogo de éxito
     if (showSuccessDialog) {
         AlertDialog(
             onDismissRequest = { },
@@ -909,135 +931,103 @@ fun AvatarSelectionScreen(
                 )
             },
             text = {
-                Text(
-                    text = "Tu información se ha guardado correctamente. ¡Bienvenido a EDUMON!",
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                    color = GrisOscuro
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showSuccessDialog = false
-                        selectedAvatar?.let { onAvatarSelected(it) }
-                        navController.navigate("home") {
-                            popUpTo(0) { inclusive = true }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(54.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = VerdeLima),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
-                ) {
-                    Text("Comenzar", fontWeight = FontWeight.Bold, fontSize = 17.sp)
-                }
-            },
-            containerColor = Color.White,
-            shape = RoundedCornerShape(28.dp)
-        )
-    }
-
-    // Diálogo de mantenimiento (profesores)
-    if (showMaintenanceDialog) {
-        AlertDialog(
-            onDismissRequest = { },
-            icon = {
-                Box(
-                    modifier = Modifier
-                        .size(90.dp)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    Naranja.copy(alpha = 0.2f),
-                                    Naranja.copy(alpha = 0.08f)
-                                )
-                            ),
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Construction,
-                        contentDescription = "Mantenimiento",
-                        tint = Naranja,
-                        modifier = Modifier.size(44.dp)
-                    )
-                }
-            },
-            title = {
-                Text(
-                    text = "Perfil Completado",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 24.sp
-                    ),
-                    textAlign = TextAlign.Center,
-                    color = FondoOscuroPrimario
-                )
-            },
-            text = {
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
                     Text(
-                        text = "Estimado Profesor,",
+                        text = if (userRol == "profesor" || userRol == "docente") {
+                            "Estimado Profesor,"
+                        } else {
+                            "Tu información se ha guardado correctamente."
+                        },
                         style = MaterialTheme.typography.bodyLarge.copy(
                             fontWeight = FontWeight.Bold
                         ),
                         color = FondoOscuroPrimario
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "Tu perfil ha sido actualizado exitosamente. Ahora puedes acceder a todas las funcionalidades de EDUMON.",
-                        style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
-                        color = GrisOscuro
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = AzulCielo.copy(alpha = 0.1f)
-                        ),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+
+                    if (userRol == "profesor" || userRol == "docente") {
+                        Text(
+                            text = "Tu perfil ha sido actualizado exitosamente. Ahora puedes acceder a todas las funcionalidades de EDUMON.",
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                            color = GrisOscuro
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = AzulCielo.copy(alpha = 0.1f)
+                            ),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Computer,
-                                contentDescription = null,
-                                tint = AzulCielo,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = "Usa la plataforma web para gestionar tus cursos y contenidos.",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.Medium
-                                ),
-                                color = AzulCielo
-                            )
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Computer,
+                                    contentDescription = null,
+                                    tint = AzulCielo,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "Usa la plataforma web para gestionar tus cursos y contenidos.",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.Medium
+                                    ),
+                                    color = AzulCielo
+                                )
+                            }
                         }
+                    } else {
+                        Text(
+                            text = "¡Bienvenido a EDUMON! Ya puedes comenzar a explorar y realizar las tareas asignadas.",
+                            style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 22.sp),
+                            color = GrisOscuro
+                        )
                     }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        showMaintenanceDialog = false
-                        navController.navigate("home") {
-                            popUpTo(0) { inclusive = true }
+                        showSuccessDialog = false
+
+                        // Navegar según el rol
+                        try {
+                            Log.d("AvatarSelection", "🚀 Navegando a home - Rol: $userRol")
+
+                            navController.navigate("home") {
+                                popUpTo(0) { inclusive = true }
+                            }
+
+                            Log.d("AvatarSelection", "✅ Navegación exitosa")
+
+                        } catch (e: Exception) {
+                            Log.e("AvatarSelection", "❌ Error en navegación", e)
+                            // Intentar navegación alternativa
+                            try {
+                                navController.navigate("home") {
+                                    popUpTo("avatar_selection") { inclusive = true }
+                                }
+                            } catch (e2: Exception) {
+                                Log.e("AvatarSelection", "❌ Error crítico en navegación fallback", e2)
+                            }
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(54.dp),
                     shape = RoundedCornerShape(16.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AzulCielo),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (userRol == "profesor" || userRol == "docente") AzulCielo else VerdeLima
+                    ),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
                 ) {
-                    Text("Entendido", fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(
+                        text = if (userRol == "profesor" || userRol == "docente") "Entendido" else "Comenzar",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
                 }
             },
             containerColor = Color.White,
