@@ -3,15 +3,17 @@
     xmlns:tools="http://schemas.android.com/tools"
     package="com.example.edumonjetcompose">
 
-    <!-- Características opcionales -->
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- 📱 Características opcionales -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
-    <!-- Permisos generales -->
+    <!-- 🌐 Permisos generales -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- Permisos para acceder a medios según la versión de Android -->
+    <!-- 💾 Permisos para medios (según versión Android) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
@@ -31,7 +33,7 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="34">
 
-        <!-- Activity principal -->
+        <!-- 🚀 Activity principal -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -42,7 +44,7 @@
             </intent-filter>
         </activity>
 
-        <!-- FileProvider para cámara y almacenamiento -->
+        <!-- 📁 FileProvider (para compartir archivos/cámara) -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.provider"
@@ -54,5 +56,4 @@
         </provider>
 
     </application>
-
 </manifest>

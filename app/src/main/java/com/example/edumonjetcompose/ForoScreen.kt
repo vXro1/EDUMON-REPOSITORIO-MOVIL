@@ -1,15 +1,18 @@
 package com.example.edumonjetcompose
 
-
+import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,60 +26,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.edumonjetcompose.models.ArchivoForo
+import com.example.edumonjetcompose.models.DocenteInfo
+import com.example.edumonjetcompose.models.Foro
+import com.example.edumonjetcompose.models.MensajeForo
+import com.example.edumonjetcompose.models.UsuarioInfo
 import com.example.edumonjetcompose.network.ApiService
 import com.google.gson.JsonObject
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-// Data classes
-data class Foro(
-    val id: String,
-    val titulo: String,
-    val descripcion: String,
-    val estado: String,
-    val docenteId: DocenteInfo,
-    val fechaCreacion: String,
-    val totalMensajes: Int,
-    val archivos: List<ArchivoForo>
-)
-
-data class DocenteInfo(
-    val id: String,
-    val nombre: String,
-    val apellido: String,
-    val fotoPerfilUrl: String?,
-    val rol: String
-)
-
-data class ArchivoForo(
-    val url: String,
-    val tipo: String,
-    val nombre: String
-)
-
-data class MensajeForo(
-    val id: String,
-    val contenido: String,
-    val usuarioId: UsuarioInfo,
-    val fechaCreacion: String,
-    val likes: List<String>,
-    val archivos: List<ArchivoForo>,
-    val respuestas: List<MensajeForo>
-)
-
-data class UsuarioInfo(
-    val id: String,
-    val nombre: String,
-    val apellido: String,
-    val fotoPerfilUrl: String?,
-    val rol: String
-)
-
+// ==================== PANTALLA PRINCIPAL DE FOROS ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ForoScreen(
@@ -88,15 +55,17 @@ fun ForoScreen(
     var foros by remember { mutableStateOf<List<Foro>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var isRefreshing by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
-    // Cargar foros
-    LaunchedEffect(cursoId) {
+    // Función para cargar foros
+    fun cargarForos() {
         scope.launch {
             try {
-                isLoading = true
+                if (!isRefreshing) isLoading = true
                 errorMessage = null
 
                 val response = ApiService.getForosPorCurso(token, cursoId)
@@ -105,56 +74,100 @@ fun ForoScreen(
                     val body = response.body()
                     val forosArray = body?.getAsJsonArray("foros")
 
-                    foros = forosArray?.map { element ->
-                        val foroObj = element.asJsonObject
-                        val docenteObj = foroObj.getAsJsonObject("docenteId")
+                    foros = forosArray?.mapNotNull { element ->
+                        try {
+                            val foroObj = element.asJsonObject
+                            val docenteObj = foroObj.getAsJsonObject("docenteId")
 
-                        Foro(
-                            id = foroObj.get("_id").asString,
-                            titulo = foroObj.get("titulo").asString,
-                            descripcion = foroObj.get("descripcion").asString,
-                            estado = foroObj.get("estado").asString,
-                            docenteId = DocenteInfo(
-                                id = docenteObj.get("_id").asString,
-                                nombre = docenteObj.get("nombre").asString,
-                                apellido = docenteObj.get("apellido").asString,
-                                fotoPerfilUrl = docenteObj.get("fotoPerfilUrl")?.asString,
-                                rol = docenteObj.get("rol").asString
-                            ),
-                            fechaCreacion = foroObj.get("fechaCreacion").asString,
-                            totalMensajes = foroObj.get("totalMensajes")?.asInt ?: 0,
-                            archivos = foroObj.getAsJsonArray("archivos")?.map { archivo ->
-                                val archivoObj = archivo.asJsonObject
-                                ArchivoForo(
-                                    url = archivoObj.get("url").asString,
-                                    tipo = archivoObj.get("tipo").asString,
-                                    nombre = archivoObj.get("nombre").asString
-                                )
-                            } ?: emptyList()
-                        )
+                            Foro(
+                                id = foroObj.get("_id").asString,
+                                titulo = foroObj.get("titulo")?.asString ?: "Sin título",
+                                descripcion = foroObj.get("descripcion")?.asString ?: "",
+                                estado = foroObj.get("estado")?.asString ?: "cerrado",
+                                docenteId = DocenteInfo(
+                                    id = docenteObj.get("_id").asString,
+                                    nombre = docenteObj.get("nombre")?.asString ?: "",
+                                    apellido = docenteObj.get("apellido")?.asString ?: "",
+                                    fotoPerfilUrl = docenteObj.get("fotoPerfilUrl")?.asString,
+                                    rol = docenteObj.get("rol")?.asString ?: "docente"
+                                ),
+                                fechaCreacion = foroObj.get("fechaCreacion")?.asString ?: "",
+                                totalMensajes = foroObj.get("totalMensajes")?.asInt ?: 0,
+                                archivos = foroObj.getAsJsonArray("archivos")?.mapNotNull { archivo ->
+                                    try {
+                                        val archivoObj = archivo.asJsonObject
+                                        ArchivoForo(
+                                            url = archivoObj.get("url")?.asString ?: "",
+                                            tipo = archivoObj.get("tipo")?.asString ?: "otro",
+                                            nombre = archivoObj.get("nombre")?.asString ?: "Archivo"
+                                        )
+                                    } catch (e: Exception) {
+                                        null
+                                    }
+                                } ?: emptyList()
+                            )
+                        } catch (e: Exception) {
+                            null
+                        }
                     } ?: emptyList()
+
+                    if (isRefreshing) {
+                        snackbarHostState.showSnackbar("Foros actualizados")
+                    }
                 } else {
-                    errorMessage = "Error al cargar los foros"
+                    errorMessage = "Error al cargar los foros: ${response.code()}"
                 }
             } catch (e: Exception) {
-                errorMessage = "Error: ${e.message}"
+                errorMessage = "Error: ${e.localizedMessage}"
             } finally {
                 isLoading = false
+                isRefreshing = false
             }
         }
+    }
+
+    // Cargar foros al iniciar
+    LaunchedEffect(cursoId) {
+        cargarForos()
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Foros del Curso") },
+                title = {
+                    Column {
+                        Text("Foros del Curso")
+                        if (foros.isNotEmpty()) {
+                            Text(
+                                text = "${foros.size} foro(s)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, "Volver")
                     }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            isRefreshing = true
+                            cargarForos()
+                        },
+                        enabled = !isLoading && !isRefreshing
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Actualizar"
+                        )
+                    }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -162,63 +175,35 @@ fun ForoScreen(
                 .padding(padding)
         ) {
             when {
-                isLoading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                isLoading && !isRefreshing -> {
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Cargando foros...")
+                    }
                 }
                 errorMessage != null -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = errorMessage ?: "Error desconocido",
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = {
-                            scope.launch {
-                                isLoading = true
-                                errorMessage = null
-                                // Recargar
-                            }
-                        }) {
-                            Text("Reintentar")
-                        }
-                    }
+                    ErrorView(
+                        message = errorMessage ?: "Error desconocido",
+                        onRetry = { cargarForos() }
+                    )
                 }
                 foros.isEmpty() -> {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Forum,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "No hay foros disponibles",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                    }
+                    EmptyForosView()
                 }
                 else -> {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(foros) { foro ->
+                        items(
+                            items = foros,
+                            key = { it.id }
+                        ) { foro ->
                             ForoCard(
                                 foro = foro,
                                 onClick = {
@@ -226,13 +211,28 @@ fun ForoScreen(
                                 }
                             )
                         }
+
+                        // Espaciado final
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
                     }
                 }
+            }
+
+            // Indicador de refresco
+            if (isRefreshing) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                )
             }
         }
     }
 }
 
+// ==================== TARJETA DE FORO ====================
 @Composable
 fun ForoCard(
     foro: Foro,
@@ -242,75 +242,73 @@ fun ForoCard(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
-        )
+        ),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Header con docente
+            // Header con docente y estado
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                AsyncImage(
-                    model = foro.docenteId.fotoPerfilUrl,
-                    contentDescription = "Foto docente",
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentScale = ContentScale.Crop
-                )
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${foro.docenteId.nombre} ${foro.docenteId.apellido}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = formatearFecha(foro.fechaCreacion),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Estado del foro
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = if (foro.estado == "abierto")
-                        Color(0xFF4CAF50).copy(alpha = 0.1f)
-                    else
-                        Color(0xFFF44336).copy(alpha = 0.1f)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        text = foro.estado.uppercase(),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (foro.estado == "abierto") Color(0xFF4CAF50) else Color(0xFFF44336),
-                        fontWeight = FontWeight.Bold
+                    AsyncImage(
+                        model = ImageRequest.Builder(LocalContext.current)
+                            .data(foro.docenteId.fotoPerfilUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = "Foto docente",
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentScale = ContentScale.Crop
                     )
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column {
+                        Text(
+                            text = "${foro.docenteId.nombre} ${foro.docenteId.apellido}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = formatearFecha(foro.fechaCreacion),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
+
+                // Estado badge
+                EstadoForoBadge(estado = foro.estado)
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            // Título y descripción
+            // Título
             Text(
                 text = foro.titulo,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
             )
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // Descripción
             Text(
                 text = foro.descripcion,
                 style = MaterialTheme.typography.bodyMedium,
@@ -319,52 +317,78 @@ fun ForoCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // Archivos adjuntos
+            // Archivos adjuntos preview
             if (foro.archivos.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Vista previa de imágenes
+                val imagenesEnForo = foro.archivos.filter { it.tipo == "imagen" }
+                if (imagenesEnForo.isNotEmpty()) {
+                    ImagenesPreview(imagenes = imagenesEnForo.take(3))
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
                         imageVector = Icons.Default.Attachment,
-                        contentDescription = "Archivos",
-                        modifier = Modifier.size(16.dp),
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
                         tint = MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
                         text = "${foro.archivos.size} archivo(s) adjunto(s)",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Footer con contador de mensajes
+            Divider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Footer con estadísticas
             Row(
                 modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Forum,
-                    contentDescription = "Mensajes",
-                    modifier = Modifier.size(20.dp),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "${foro.totalMensajes} mensaje(s)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Forum,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "${foro.totalMensajes} mensaje(s)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                TextButton(onClick = onClick) {
+                    Text("Ver foro")
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.ArrowForward,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
 }
 
-// Pantalla de detalle del foro
+// ==================== PANTALLA DE DETALLE DEL FORO ====================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ForoDetalleScreen(
@@ -381,11 +405,12 @@ fun ForoDetalleScreen(
     var nuevoMensaje by remember { mutableStateOf("") }
     var respuestaA by remember { mutableStateOf<String?>(null) }
     var enviandoMensaje by remember { mutableStateOf(false) }
-
     var archivosSeleccionados by remember { mutableStateOf<List<Uri>>(emptyList()) }
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -393,7 +418,7 @@ fun ForoDetalleScreen(
         archivosSeleccionados = uris
     }
 
-    // Cargar foro y mensajes
+    // Cargar datos
     fun cargarDatos() {
         scope.launch {
             try {
@@ -408,25 +433,29 @@ fun ForoDetalleScreen(
                         val docenteObj = it.getAsJsonObject("docenteId")
                         foro = Foro(
                             id = it.get("_id").asString,
-                            titulo = it.get("titulo").asString,
-                            descripcion = it.get("descripcion").asString,
-                            estado = it.get("estado").asString,
+                            titulo = it.get("titulo")?.asString ?: "Sin título",
+                            descripcion = it.get("descripcion")?.asString ?: "",
+                            estado = it.get("estado")?.asString ?: "cerrado",
                             docenteId = DocenteInfo(
                                 id = docenteObj.get("_id").asString,
-                                nombre = docenteObj.get("nombre").asString,
-                                apellido = docenteObj.get("apellido").asString,
+                                nombre = docenteObj.get("nombre")?.asString ?: "",
+                                apellido = docenteObj.get("apellido")?.asString ?: "",
                                 fotoPerfilUrl = docenteObj.get("fotoPerfilUrl")?.asString,
-                                rol = docenteObj.get("rol").asString
+                                rol = docenteObj.get("rol")?.asString ?: "docente"
                             ),
-                            fechaCreacion = it.get("fechaCreacion").asString,
+                            fechaCreacion = it.get("fechaCreacion")?.asString ?: "",
                             totalMensajes = it.get("totalMensajes")?.asInt ?: 0,
-                            archivos = it.getAsJsonArray("archivos")?.map { archivo ->
-                                val archivoObj = archivo.asJsonObject
-                                ArchivoForo(
-                                    url = archivoObj.get("url").asString,
-                                    tipo = archivoObj.get("tipo").asString,
-                                    nombre = archivoObj.get("nombre").asString
-                                )
+                            archivos = it.getAsJsonArray("archivos")?.mapNotNull { archivo ->
+                                try {
+                                    val archivoObj = archivo.asJsonObject
+                                    ArchivoForo(
+                                        url = archivoObj.get("url")?.asString ?: "",
+                                        tipo = archivoObj.get("tipo")?.asString ?: "otro",
+                                        nombre = archivoObj.get("nombre")?.asString ?: "Archivo"
+                                    )
+                                } catch (e: Exception) {
+                                    null
+                                }
                             } ?: emptyList()
                         )
                     }
@@ -436,11 +465,17 @@ fun ForoDetalleScreen(
                 val mensajesResponse = ApiService.getMensajesForo(token, foroId)
                 if (mensajesResponse.isSuccessful) {
                     val mensajesArray = mensajesResponse.body()?.getAsJsonArray("mensajes")
-                    mensajes = mensajesArray?.map { parseMensaje(it.asJsonObject) } ?: emptyList()
+                    mensajes = mensajesArray?.mapNotNull {
+                        try {
+                            parseMensaje(it.asJsonObject)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } ?: emptyList()
                 }
 
             } catch (e: Exception) {
-                errorMessage = "Error: ${e.message}"
+                errorMessage = "Error: ${e.localizedMessage}"
             } finally {
                 isLoading = false
             }
@@ -455,25 +490,37 @@ fun ForoDetalleScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = foro?.titulo ?: "Cargando...",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Column {
+                        Text(
+                            text = foro?.titulo ?: "Cargando...",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${mensajes.size} mensaje(s)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, "Volver")
                     }
+                },
+                actions = {
+                    IconButton(onClick = { cargarDatos() }) {
+                        Icon(Icons.Default.Refresh, "Actualizar")
+                    }
                 }
             )
         },
         bottomBar = {
-            // Solo mostrar si el foro está abierto
             if (foro?.estado == "abierto") {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shadowElevation = 8.dp
+                    shadowElevation = 8.dp,
+                    tonalElevation = 3.dp
                 ) {
                     Column(
                         modifier = Modifier
@@ -481,91 +528,94 @@ fun ForoDetalleScreen(
                             .padding(16.dp)
                     ) {
                         // Indicador de respuesta
-                        if (respuestaA != null) {
+                        AnimatedVisibility(
+                            visible = respuestaA != null,
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        MaterialTheme.colorScheme.primaryContainer,
-                                        RoundedCornerShape(8.dp)
+                                        MaterialTheme.colorScheme.secondaryContainer,
+                                        RoundedCornerShape(12.dp)
                                     )
-                                    .padding(8.dp),
+                                    .padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Reply,
                                     contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Respondiendo...",
+                                    text = "Respondiendo a un mensaje...",
                                     modifier = Modifier.weight(1f),
-                                    style = MaterialTheme.typography.bodySmall
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
                                 )
                                 IconButton(
                                     onClick = { respuestaA = null },
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(32.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
                                         contentDescription = "Cancelar",
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
+                        }
+
+                        if (respuestaA != null) {
                             Spacer(modifier = Modifier.height(8.dp))
                         }
 
                         // Archivos seleccionados
-                        if (archivosSeleccionados.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                archivosSeleccionados.forEach { uri ->
-                                    Box(
-                                        modifier = Modifier
-                                            .size(60.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    ) {
-                                        AsyncImage(
-                                            model = uri,
-                                            contentDescription = null,
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                        IconButton(
-                                            onClick = {
+                        AnimatedVisibility(
+                            visible = archivosSeleccionados.isNotEmpty(),
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column {
+                                val scrollState = rememberScrollState()
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(scrollState),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    archivosSeleccionados.forEach { uri ->
+                                        ArchivoSeleccionadoPreview(
+                                            uri = uri,
+                                            onRemove = {
                                                 archivosSeleccionados = archivosSeleccionados.filter { it != uri }
-                                            },
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .size(20.dp)
-                                                .background(Color.Black.copy(alpha = 0.5f), CircleShape)
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Close,
-                                                contentDescription = "Eliminar",
-                                                tint = Color.White,
-                                                modifier = Modifier.size(12.dp)
-                                            )
-                                        }
+                                            }
+                                        )
                                     }
                                 }
+                                Spacer(modifier = Modifier.height(8.dp))
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
 
+                        // Campo de entrada
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.Bottom
                         ) {
                             IconButton(
-                                onClick = { filePickerLauncher.launch("*/*") }
+                                onClick = { filePickerLauncher.launch("*/*") },
+                                enabled = !enviandoMensaje
                             ) {
-                                Icon(Icons.Default.AttachFile, "Adjuntar archivo")
+                                Icon(
+                                    Icons.Default.AttachFile,
+                                    "Adjuntar archivo",
+                                    tint = if (enviandoMensaje)
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                                    else MaterialTheme.colorScheme.primary
+                                )
                             }
 
                             OutlinedTextField(
@@ -573,11 +623,14 @@ fun ForoDetalleScreen(
                                 onValueChange = { nuevoMensaje = it },
                                 modifier = Modifier.weight(1f),
                                 placeholder = { Text("Escribe un mensaje...") },
-                                maxLines = 4,
-                                enabled = !enviandoMensaje
+                                maxLines = 5,
+                                enabled = !enviandoMensaje,
+                                shape = RoundedCornerShape(24.dp)
                             )
 
-                            IconButton(
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            FloatingActionButton(
                                 onClick = {
                                     if (nuevoMensaje.isNotBlank()) {
                                         scope.launch {
@@ -597,19 +650,30 @@ fun ForoDetalleScreen(
                                                     respuestaA = null
                                                     archivosSeleccionados = emptyList()
                                                     cargarDatos()
+                                                    snackbarHostState.showSnackbar("Mensaje enviado")
+
+                                                    // Scroll al final
+                                                    launch {
+                                                        listState.animateScrollToItem(mensajes.size)
+                                                    }
+                                                } else {
+                                                    snackbarHostState.showSnackbar("Error al enviar mensaje")
                                                 }
                                             } catch (e: Exception) {
-                                                errorMessage = e.message
+                                                snackbarHostState.showSnackbar("Error: ${e.localizedMessage}")
                                             } finally {
                                                 enviandoMensaje = false
                                             }
                                         }
                                     }
                                 },
-                                enabled = nuevoMensaje.isNotBlank() && !enviandoMensaje
+                                modifier = Modifier.size(48.dp)
                             ) {
                                 if (enviandoMensaje) {
-                                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp
+                                    )
                                 } else {
                                     Icon(Icons.Default.Send, "Enviar")
                                 }
@@ -617,8 +681,34 @@ fun ForoDetalleScreen(
                         }
                     }
                 }
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.errorContainer
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Este foro está cerrado",
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         Box(
             modifier = Modifier
@@ -627,58 +717,137 @@ fun ForoDetalleScreen(
         ) {
             when {
                 isLoading -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center)
-                    )
+                    Column(
+                        modifier = Modifier.align(Alignment.Center),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        CircularProgressIndicator()
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Cargando foro...")
+                    }
                 }
                 errorMessage != null -> {
+                    ErrorView(
+                        message = errorMessage ?: "Error desconocido",
+                        onRetry = { cargarDatos() }
+                    )
+                }
+                foro == null -> {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(16.dp),
+                            .padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text(
-                            text = errorMessage ?: "Error desconocido",
-                            color = MaterialTheme.colorScheme.error
+                        Icon(
+                            imageVector = Icons.Default.Error,
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.error
                         )
                         Spacer(modifier = Modifier.height(16.dp))
-                        Button(onClick = { cargarDatos() }) {
-                            Text("Reintentar")
-                        }
+                        Text(
+                            text = "Foro no encontrado",
+                            style = MaterialTheme.typography.titleLarge
+                        )
                     }
-                }
-                foro == null -> {
-                    Text(
-                        text = "Foro no encontrado",
-                        modifier = Modifier.align(Alignment.Center)
-                    )
                 }
                 else -> {
                     LazyColumn(
+                        state = listState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         // Header del foro
                         item {
                             ForoHeaderCard(foro = foro!!)
                         }
 
+                        // Título de mensajes
+                        item {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Forum,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Mensajes (${mensajes.size})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
                         // Mensajes
-                        items(mensajes) { mensaje ->
-                            MensajeCard(
-                                mensaje = mensaje,
-                                userId = userId,
-                                onResponder = { respuestaA = mensaje.id },
-                                onLike = {
-                                    scope.launch {
-                                        ApiService.toggleLikeMensaje(token, mensaje.id)
-                                        cargarDatos()
+                        if (mensajes.isEmpty()) {
+                            item {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(32.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ChatBubbleOutline,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(48.dp),
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                        Text(
+                                            text = "No hay mensajes aún",
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "Sé el primero en participar",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                        )
                                     }
                                 }
-                            )
+                            }
+                        } else {
+                            items(
+                                items = mensajes,
+                                key = { it.id }
+                            ) { mensaje ->
+                                MensajeCard(
+                                    mensaje = mensaje,
+                                    userId = userId,
+                                    onResponder = {
+                                        respuestaA = mensaje.id
+                                    },
+                                    onLike = {
+                                        scope.launch {
+                                            try {
+                                                ApiService.toggleLikeMensaje(token, mensaje.id)
+                                                cargarDatos()
+                                            } catch (e: Exception) {
+                                                snackbarHostState.showSnackbar("Error al dar like")
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                        }
+
+                        // Espaciado final
+                        item {
+                            Spacer(modifier = Modifier.height(80.dp))
                         }
                     }
                 }
@@ -687,37 +856,89 @@ fun ForoDetalleScreen(
     }
 }
 
+// ==================== COMPONENTES AUXILIARES ====================
+
 @Composable
 fun ForoHeaderCard(foro: Foro) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp)
+                .padding(20.dp)
         ) {
-            Text(
-                text = foro.titulo,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = foro.titulo,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
 
-            Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "${foro.docenteId.nombre} ${foro.docenteId.apellido}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+
+                EstadoForoBadge(estado = foro.estado)
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             Text(
                 text = foro.descripcion,
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
             )
 
+            // Archivos del foro
             if (foro.archivos.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    text = "Archivos adjuntos:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Mostrar imágenes primero
+                val imagenes = foro.archivos.filter { it.tipo == "imagen" }
+                if (imagenes.isNotEmpty()) {
+                    ImagenesGrid(imagenes = imagenes)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Otros archivos
                 foro.archivos.forEach { archivo ->
                     ArchivoChip(archivo = archivo)
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
             }
         }
@@ -731,9 +952,18 @@ fun MensajeCard(
     onResponder: () -> Unit,
     onLike: () -> Unit
 ) {
+    val isPropio = mensaje.usuarioId.id == userId
+
     Card(
         modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isPropio)
+                MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+            else
+                MaterialTheme.colorScheme.surface
+        )
     ) {
         Column(
             modifier = Modifier
@@ -742,13 +972,17 @@ fun MensajeCard(
         ) {
             // Header del mensaje
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 AsyncImage(
-                    model = mensaje.usuarioId.fotoPerfilUrl,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(mensaje.usuarioId.fotoPerfilUrl)
+                        .crossfade(true)
+                        .build(),
                     contentDescription = "Foto usuario",
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(44.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentScale = ContentScale.Crop
@@ -757,30 +991,52 @@ fun MensajeCard(
                 Spacer(modifier = Modifier.width(12.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${mensaje.usuarioId.nombre} ${mensaje.usuarioId.apellido}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        text = formatearFecha(mensaje.fechaCreacion),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                // Badge de rol
-                if (mensaje.usuarioId.rol == "docente") {
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                    ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "DOCENTE",
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
+                            text = "${mensaje.usuarioId.nombre} ${mensaje.usuarioId.apellido}",
+                            style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold
+                        )
+
+                        if (mensaje.usuarioId.rol == "docente") {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            ) {
+                                Text(
+                                    text = "DOCENTE",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        if (isPropio) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Tu mensaje",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AccessTime,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = formatearFecha(mensaje.fechaCreacion),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
@@ -788,31 +1044,49 @@ fun MensajeCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Contenido
+            // Contenido del mensaje
             Text(
                 text = mensaje.contenido,
-                style = MaterialTheme.typography.bodyMedium
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
             )
 
-            // Archivos
+            // Archivos del mensaje
             if (mensaje.archivos.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                mensaje.archivos.forEach { archivo ->
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Imágenes
+                val imagenes = mensaje.archivos.filter { it.tipo == "imagen" }
+                if (imagenes.isNotEmpty()) {
+                    ImagenesGrid(imagenes = imagenes)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // Otros archivos
+                mensaje.archivos.filter { it.tipo != "imagen" }.forEach { archivo ->
                     ArchivoChip(archivo = archivo)
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                 }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Acciones
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row {
-                    // Like
-                    IconButton(onClick = onLike) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Like button
+                    IconButton(
+                        onClick = onLike,
+                        modifier = Modifier.size(40.dp)
+                    ) {
                         Icon(
                             imageVector = if (mensaje.likes.contains(userId))
                                 Icons.Default.Favorite
@@ -820,27 +1094,37 @@ fun MensajeCard(
                                 Icons.Default.FavoriteBorder,
                             contentDescription = "Me gusta",
                             tint = if (mensaje.likes.contains(userId))
-                                Color.Red
+                                Color(0xFFE91E63)
+                            else
+                                MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    if (mensaje.likes.isNotEmpty()) {
+                        Text(
+                            text = "${mensaje.likes.size}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (mensaje.likes.contains(userId))
+                                Color(0xFFE91E63)
                             else
                                 MaterialTheme.colorScheme.onSurface
                         )
                     }
-                    Text(
-                        text = "${mensaje.likes.size}",
-                        modifier = Modifier.align(Alignment.CenterVertically),
-                        style = MaterialTheme.typography.bodySmall
-                    )
                 }
 
-                // Responder (solo si es mensaje del docente)
-                if (mensaje.usuarioId.rol == "docente") {
-                    TextButton(onClick = onResponder) {
+                // Responder (solo si es del docente o para iniciar conversación)
+                if (mensaje.usuarioId.rol == "docente" || mensaje.respuestas.isEmpty()) {
+                    TextButton(
+                        onClick = onResponder,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Reply,
                             contentDescription = "Responder",
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(18.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text("Responder")
                     }
                 }
@@ -848,15 +1132,25 @@ fun MensajeCard(
 
             // Respuestas
             if (mensaje.respuestas.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "${mensaje.respuestas.size} respuesta(s):",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Bold
+                )
+
                 Spacer(modifier = Modifier.height(8.dp))
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 16.dp)
+                        .padding(start = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     mensaje.respuestas.forEach { respuesta ->
                         RespuestaCard(respuesta = respuesta, userId = userId)
-                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
@@ -869,35 +1163,58 @@ fun RespuestaCard(
     respuesta: MensajeForo,
     userId: String
 ) {
+    val isPropio = respuesta.usuarioId.id == userId
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        shape = RoundedCornerShape(12.dp),
+        color = if (isPropio)
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+        else
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+        tonalElevation = 1.dp
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 AsyncImage(
-                    model = respuesta.usuarioId.fotoPerfilUrl,
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(respuesta.usuarioId.fotoPerfilUrl)
+                        .crossfade(true)
+                        .build(),
                     contentDescription = "Foto usuario",
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer),
                     contentScale = ContentScale.Crop
                 )
 
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "${respuesta.usuarioId.nombre} ${respuesta.usuarioId.apellido}",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "${respuesta.usuarioId.nombre} ${respuesta.usuarioId.apellido}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (isPropio) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Tu respuesta",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                     Text(
                         text = formatearFecha(respuesta.fechaCreacion),
                         style = MaterialTheme.typography.labelSmall,
@@ -906,16 +1223,23 @@ fun RespuestaCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 text = respuesta.contenido,
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodyMedium
             )
 
             if (respuesta.archivos.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                respuesta.archivos.forEach { archivo ->
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val imagenes = respuesta.archivos.filter { it.tipo == "imagen" }
+                if (imagenes.isNotEmpty()) {
+                    ImagenesGrid(imagenes = imagenes, small = true)
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
+
+                respuesta.archivos.filter { it.tipo != "imagen" }.forEach { archivo ->
                     ArchivoChip(archivo = archivo, small = true)
                     Spacer(modifier = Modifier.height(4.dp))
                 }
@@ -929,15 +1253,18 @@ fun ArchivoChip(
     archivo: ArchivoForo,
     small: Boolean = false
 ) {
+    val context = LocalContext.current
+
     val icon = when (archivo.tipo) {
         "imagen" -> Icons.Default.Image
         "video" -> Icons.Default.VideoLibrary
-        "pdf" -> Icons.Default.PictureAsPdf
+        "pdf" -> Icons.Default.Description
+        "documento" -> Icons.Default.Description
         else -> Icons.Default.AttachFile
     }
 
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(if (small) 8.dp else 12.dp),
         color = MaterialTheme.colorScheme.secondaryContainer,
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -945,28 +1272,44 @@ fun ArchivoChip(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    // Abrir archivo (implementar según necesidad)
+                    // Abrir archivo en navegador
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(archivo.url))
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        // Error al abrir
+                    }
                 }
-                .padding(horizontal = if (small) 8.dp else 12.dp, vertical = if (small) 6.dp else 8.dp),
+                .padding(
+                    horizontal = if (small) 10.dp else 14.dp,
+                    vertical = if (small) 8.dp else 10.dp
+                ),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = archivo.tipo,
-                modifier = Modifier.size(if (small) 16.dp else 20.dp),
+                modifier = Modifier.size(if (small) 18.dp else 22.dp),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer
             )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = archivo.nombre,
-                modifier = Modifier.weight(1f),
-                style = if (small) MaterialTheme.typography.labelSmall else MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = archivo.nombre,
+                    style = if (small) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = archivo.tipo.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                )
+            }
             Icon(
-                imageVector = Icons.Default.Download,
-                contentDescription = "Descargar",
+                imageVector = Icons.Default.OpenInNew,
+                contentDescription = "Abrir",
                 modifier = Modifier.size(if (small) 16.dp else 20.dp),
                 tint = MaterialTheme.colorScheme.onSecondaryContainer
             )
@@ -974,46 +1317,368 @@ fun ArchivoChip(
     }
 }
 
-// Función auxiliar para parsear mensajes del JSON
+@Composable
+fun ImagenesGrid(imagenes: List<ArchivoForo>, small: Boolean = false) {
+    val context = LocalContext.current
+
+    when (imagenes.size) {
+        1 -> {
+            // Una sola imagen - grande
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(imagenes[0].url)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = imagenes[0].nombre,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = if (small) 150.dp else 250.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(imagenes[0].url))
+                            context.startActivity(intent)
+                        } catch (e: Exception) { }
+                    },
+                contentScale = ContentScale.Crop
+            )
+        }
+        2 -> {
+            // Dos imágenes - lado a lado
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                imagenes.forEach { imagen ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(imagen.url)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = imagen.nombre,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(if (small) 100.dp else 150.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(imagen.url))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) { }
+                            },
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+        }
+        else -> {
+            // 3 o más imágenes - grid
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    imagenes.take(2).forEach { imagen ->
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(imagen.url)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = imagen.nombre,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(if (small) 80.dp else 120.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(imagen.url))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) { }
+                                },
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                }
+
+                if (imagenes.size > 2) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(if (small) 80.dp else 120.dp)
+                    ) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(imagenes[2].url)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = imagenes[2].nombre,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(imagenes[2].url))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) { }
+                                },
+                            contentScale = ContentScale.Crop
+                        )
+
+                        if (imagenes.size > 3) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .clip(RoundedCornerShape(12.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "+${imagenes.size - 3}",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ImagenesPreview(imagenes: List<ArchivoForo>) {
+    val scrollState = rememberScrollState()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(scrollState),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        imagenes.forEach { imagen ->
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(imagen.url)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = imagen.nombre,
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop
+            )
+        }
+    }
+}
+
+@Composable
+fun ArchivoSeleccionadoPreview(
+    uri: Uri,
+    onRemove: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(70.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        AsyncImage(
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(uri)
+                .crossfade(true)
+                .build(),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop
+        )
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(24.dp)
+                .padding(2.dp)
+                .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Eliminar",
+                tint = Color.White,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun EstadoForoBadge(estado: String) {
+    val (backgroundColor, textColor, icon) = when (estado) {
+        "abierto" -> Triple(
+            Color(0xFF4CAF50).copy(alpha = 0.15f),
+            Color(0xFF2E7D32),
+            Icons.Default.Lock
+        )
+        else -> Triple(
+            Color(0xFFF44336).copy(alpha = 0.15f),
+            Color(0xFFC62828),
+            Icons.Default.Lock
+        )
+    }
+
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = backgroundColor
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = textColor
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(
+                text = estado.uppercase(),
+                style = MaterialTheme.typography.labelSmall,
+                color = textColor,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun ErrorView(message: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Error,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.error
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.error,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onRetry) {
+            Icon(Icons.Default.Refresh, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Reintentar")
+        }
+    }
+}
+
+@Composable
+fun EmptyForosView() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.Forum,
+            contentDescription = null,
+            modifier = Modifier.size(80.dp),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            text = "No hay foros disponibles",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "Los foros del curso aparecerán aquí",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+        )
+    }
+}
+
+// ==================== FUNCIONES AUXILIARES ====================
+
 fun parseMensaje(mensajeObj: JsonObject): MensajeForo {
     val usuarioObj = mensajeObj.getAsJsonObject("usuarioId")
 
     return MensajeForo(
-        id = mensajeObj.get("_id").asString,
-        contenido = mensajeObj.get("contenido").asString,
+        id = mensajeObj.get("_id")?.asString ?: "",
+        contenido = mensajeObj.get("contenido")?.asString ?: "",
         usuarioId = UsuarioInfo(
-            id = usuarioObj.get("_id").asString,
-            nombre = usuarioObj.get("nombre").asString,
-            apellido = usuarioObj.get("apellido").asString,
+            id = usuarioObj.get("_id")?.asString ?: "",
+            nombre = usuarioObj.get("nombre")?.asString ?: "Usuario",
+            apellido = usuarioObj.get("apellido")?.asString ?: "",
             fotoPerfilUrl = usuarioObj.get("fotoPerfilUrl")?.asString,
-            rol = usuarioObj.get("rol").asString
+            rol = usuarioObj.get("rol")?.asString ?: "padre"
         ),
-        fechaCreacion = mensajeObj.get("fechaCreacion").asString,
-        likes = mensajeObj.getAsJsonArray("likes")?.map { it.asString } ?: emptyList(),
-        archivos = mensajeObj.getAsJsonArray("archivos")?.map { archivo ->
-            val archivoObj = archivo.asJsonObject
-            ArchivoForo(
-                url = archivoObj.get("url").asString,
-                tipo = archivoObj.get("tipo").asString,
-                nombre = archivoObj.get("nombre").asString
-            )
+        fechaCreacion = mensajeObj.get("fechaCreacion")?.asString ?: "",
+        likes = mensajeObj.getAsJsonArray("likes")?.mapNotNull {
+            try { it.asString } catch (e: Exception) { null }
         } ?: emptyList(),
-        respuestas = mensajeObj.getAsJsonArray("respuestas")?.map {
-            parseMensaje(it.asJsonObject)
+        archivos = mensajeObj.getAsJsonArray("archivos")?.mapNotNull { archivo ->
+            try {
+                val archivoObj = archivo.asJsonObject
+                ArchivoForo(
+                    url = archivoObj.get("url")?.asString ?: "",
+                    tipo = archivoObj.get("tipo")?.asString ?: "otro",
+                    nombre = archivoObj.get("nombre")?.asString ?: "Archivo"
+                )
+            } catch (e: Exception) {
+                null
+            }
+        } ?: emptyList(),
+        respuestas = mensajeObj.getAsJsonArray("respuestas")?.mapNotNull {
+            try {
+                parseMensaje(it.asJsonObject)
+            } catch (e: Exception) {
+                null
+            }
         } ?: emptyList()
     )
 }
 
-// Función para formatear fechas
 fun formatearFecha(fechaStr: String): String {
     return try {
         val inputFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
         inputFormat.timeZone = TimeZone.getTimeZone("UTC")
         val fecha = inputFormat.parse(fechaStr)
 
-        val outputFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-        outputFormat.format(fecha ?: Date())
+        val ahora = Date()
+        val diferencia = ahora.time - (fecha?.time ?: 0)
+
+        when {
+            diferencia < 60000 -> "Hace un momento"
+            diferencia < 3600000 -> "Hace ${diferencia / 60000} min"
+            diferencia < 86400000 -> "Hace ${diferencia / 3600000} h"
+            diferencia < 604800000 -> {
+                val dias = diferencia / 86400000
+                if (dias == 1L) "Ayer" else "Hace $dias días"
+            }
+            else -> {
+                val outputFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                outputFormat.format(fecha ?: Date())
+            }
+        }
     } catch (e: Exception) {
         fechaStr
     }
 }
+

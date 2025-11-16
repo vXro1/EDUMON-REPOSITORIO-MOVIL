@@ -32,29 +32,14 @@ import com.example.edumonjetcompose.Celeste
 import com.example.edumonjetcompose.Fucsia
 import com.example.edumonjetcompose.Naranja
 import com.example.edumonjetcompose.VerdeLima
+import com.example.edumonjetcompose.models.EventoCalendario
 import com.example.edumonjetcompose.network.ApiService
 import com.google.gson.JsonObject
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-data class EventoCalendario(
-    val id: String,
-    val tipo: String, // "tarea" o "evento"
-    val titulo: String,
-    val descripcion: String?,
-    val fecha: String,
-    val fechaInicio: String,
-    val fechaFin: String,
-    val estado: String,
-    val modulo: String? = null,
-    val moduloId: String? = null,
-    val categoria: String? = null,
-    val ubicacion: String? = null,
-    val hora: String? = null,
-    val color: String,
-    val icono: String
-)
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
