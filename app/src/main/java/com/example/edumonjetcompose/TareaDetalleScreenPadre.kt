@@ -49,6 +49,8 @@ fun TareaDetalleScreen(
     var miEntrega by remember { mutableStateOf<Entrega?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
 
     fun cargarDatos() {
         scope.launch {
@@ -95,6 +97,7 @@ fun TareaDetalleScreen(
                         )
 
                         Log.d(TAG, "✅ Tarea cargada: ${tarea?.titulo}")
+                        Log.d(TAG, "📦 Archivos adjuntos: ${archivos.size}")
                     }
 
                     // Verificar si hay entrega previa
@@ -122,7 +125,7 @@ fun TareaDetalleScreen(
                                     comentario = e.get("calificacion")?.asJsonObject?.get("comentario")?.asString,
                                     archivos = archivosEntrega
                                 )
-                                Log.d(TAG, "Entrega encontrada: estado=${miEntrega?.estado}")
+                                Log.d(TAG, "✅ Entrega encontrada: estado=${miEntrega?.estado}")
                             }
                         }
                     } catch (e: Exception) {
@@ -137,6 +140,27 @@ fun TareaDetalleScreen(
                 errorMessage = "Error de conexión: ${e.message}"
             } finally {
                 isLoading = false
+            }
+        }
+    }
+
+    fun eliminarEntrega() {
+        scope.launch {
+            isDeleting = true
+            try {
+                val response = ApiService.eliminarEntrega(token, miEntrega!!.id)
+                if (response.isSuccessful) {
+                    snackbarHostState.showSnackbar("Entrega eliminada correctamente")
+                    miEntrega = null
+                    showDeleteDialog = false
+                } else {
+                    snackbarHostState.showSnackbar("Error al eliminar la entrega")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error eliminando entrega", e)
+                snackbarHostState.showSnackbar("Error: ${e.message}")
+            } finally {
+                isDeleting = false
             }
         }
     }
@@ -211,9 +235,51 @@ fun TareaDetalleScreen(
                                 snackbarHostState.showSnackbar("No se pudo abrir el archivo")
                             }
                         }
+                    },
+                    onEditarEntrega = {
+                        navController.navigate("tarea_entrega/$tareaId/$padreId")
+                    },
+                    onEliminarEntrega = {
+                        showDeleteDialog = true
                     }
                 )
             }
+        }
+
+        // Diálogo de confirmación para eliminar
+        if (showDeleteDialog) {
+            AlertDialog(
+                onDismissRequest = { if (!isDeleting) showDeleteDialog = false },
+                title = { Text("Eliminar Entrega") },
+                text = { Text("¿Estás seguro de que deseas eliminar esta entrega? Esta acción no se puede deshacer.") },
+                confirmButton = {
+                    Button(
+                        onClick = { eliminarEntrega() },
+                        enabled = !isDeleting,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        if (isDeleting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onError
+                            )
+                        } else {
+                            Text("Eliminar")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDeleteDialog = false },
+                        enabled = !isDeleting
+                    ) {
+                        Text("Cancelar")
+                    }
+                }
+            )
         }
     }
 }
@@ -222,98 +288,138 @@ fun TareaDetalleScreen(
 fun TareaDetalleContent(
     tarea: TareaDetalle,
     miEntrega: Entrega?,
-    onOpenFile: (String) -> Unit
+    onOpenFile: (String) -> Unit,
+    onEditarEntrega: () -> Unit,
+    onEliminarEntrega: () -> Unit
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Header con título y estado
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = tarea.titulo,
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f)
-                    )
-                    EstadoBadge(estado = tarea.estado)
-                }
-
-                // Fecha de entrega
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.CalendarToday,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = if (isVencida(tarea.fechaEntrega) && tarea.estado == "publicada")
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        text = "Entrega: ${formatFecha(tarea.fechaEntrega)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isVencida(tarea.fechaEntrega) && tarea.estado == "publicada")
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
-        }
-
-        // Tipo de entrega
-        item {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(12.dp)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                )
             ) {
-                Icon(
-                    getIconForTipo(tarea.tipoEntrega),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Text(
-                    text = getTipoTexto(tarea.tipoEntrega),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
-                )
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = tarea.titulo,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        EstadoBadge(estado = tarea.estado)
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                    // Fecha de entrega
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (isVencida(tarea.fechaEntrega) && tarea.estado == "publicada")
+                                MaterialTheme.colorScheme.error
+                            else
+                                MaterialTheme.colorScheme.primary
+                        )
+                        Column {
+                            Text(
+                                text = "Fecha de entrega",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = formatFecha(tarea.fechaEntrega),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isVencida(tarea.fechaEntrega) && tarea.estado == "publicada")
+                                    MaterialTheme.colorScheme.error
+                                else
+                                    MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    // Tipo de entrega
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            getIconForTipo(tarea.tipoEntrega),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column {
+                            Text(
+                                text = "Tipo de entrega",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Text(
+                                text = getTipoTexto(tarea.tipoEntrega),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
             }
         }
 
         // Descripción
         if (tarea.descripcion.isNotEmpty()) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Descripción",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
                     )
-                    Text(
-                        text = tarea.descripcion,
-                        style = MaterialTheme.typography.bodyLarge,
-                        lineHeight = 24.sp
-                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Description,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Descripción",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = tarea.descripcion,
+                            style = MaterialTheme.typography.bodyMedium,
+                            lineHeight = 22.sp
+                        )
+                    }
                 }
             }
         }
@@ -321,18 +427,39 @@ fun TareaDetalleContent(
         // Criterios
         if (tarea.criterios.isNotEmpty()) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Criterios de Evaluación",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
                     )
-                    Text(
-                        text = tarea.criterios,
-                        style = MaterialTheme.typography.bodyMedium,
-                        lineHeight = 22.sp
-                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Checklist,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Criterios de Evaluación",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                        }
+                        Text(
+                            text = tarea.criterios,
+                            style = MaterialTheme.typography.bodyMedium,
+                            lineHeight = 22.sp
+                        )
+                    }
                 }
             }
         }
@@ -350,48 +477,50 @@ fun TareaDetalleContent(
 
             items(count = tarea.archivosAdjuntos.size) { index ->
                 val archivo = tarea.archivosAdjuntos[index]
-                Row(
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onOpenFile(archivo.url) }
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            RoundedCornerShape(8.dp)
-                        )
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .clickable { onOpenFile(archivo.url) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
                 ) {
-                    Icon(
-                        imageVector = if (archivo.tipo == "enlace")
-                            Icons.Default.Link
-                        else
-                            Icons.Default.AttachFile,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = archivo.nombre,
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (archivo.tipo == "enlace")
+                                Icons.Default.Link
+                            else
+                                Icons.Default.AttachFile,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        archivo.descripcion?.let { desc ->
-                            Text(
-                                text = desc,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                            )
-                        }
-                    }
 
-                    Icon(
-                        Icons.Default.OpenInNew,
-                        contentDescription = "Abrir",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = archivo.nombre,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                            archivo.descripcion?.let { desc ->
+                                Text(
+                                    text = desc,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+
+                        Icon(
+                            Icons.Default.OpenInNew,
+                            contentDescription = "Abrir",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
             }
         }
@@ -400,6 +529,7 @@ fun TareaDetalleContent(
         item {
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 8.dp),
+                thickness = 2.dp,
                 color = MaterialTheme.colorScheme.outlineVariant
             )
         }
@@ -412,7 +542,7 @@ fun TareaDetalleContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Estado de Mi Entrega",
+                    text = "Mi Entrega",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -425,7 +555,12 @@ fun TareaDetalleContent(
 
         if (miEntrega != null) {
             item {
-                ResumenEntregaCard(entrega = miEntrega)
+                ResumenEntregaCard(
+                    entrega = miEntrega,
+                    onEditar = onEditarEntrega,
+                    onEliminar = onEliminarEntrega,
+                    puedeEditar = miEntrega.estado == "borrador"
+                )
             }
         } else {
             item {
@@ -440,110 +575,217 @@ fun TareaDetalleContent(
 }
 
 @Composable
-fun ResumenEntregaCard(entrega: Entrega) {
-    Column(
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                RoundedCornerShape(12.dp)
-            )
-            .padding(16.dp)
+fun ResumenEntregaCard(
+    entrega: Entrega,
+    onEditar: () -> Unit,
+    onEliminar: () -> Unit,
+    puedeEditar: Boolean
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+        )
     ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(16.dp)
         ) {
-            Icon(
-                when (entrega.estado) {
-                    "borrador" -> Icons.Default.Edit
-                    "enviada", "tarde" -> Icons.Default.CheckCircle
-                    "calificada" -> Icons.Default.Star
-                    else -> Icons.Default.CheckCircle
-                },
-                contentDescription = null,
-                tint = when (entrega.estado) {
-                    "borrador" -> MaterialTheme.colorScheme.secondary
-                    "enviada" -> MaterialTheme.colorScheme.primary
-                    "tarde" -> MaterialTheme.colorScheme.tertiary
-                    "calificada" -> MaterialTheme.colorScheme.primary
-                    else -> MaterialTheme.colorScheme.primary
-                },
-                modifier = Modifier.size(32.dp)
-            )
+            // Header con icono y título
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        when (entrega.estado) {
+                            "borrador" -> Icons.Default.Edit
+                            "enviada", "tarde" -> Icons.Default.CheckCircle
+                            "calificada" -> Icons.Default.Star
+                            else -> Icons.Default.CheckCircle
+                        },
+                        contentDescription = null,
+                        tint = when (entrega.estado) {
+                            "borrador" -> MaterialTheme.colorScheme.secondary
+                            "enviada" -> MaterialTheme.colorScheme.primary
+                            "tarde" -> MaterialTheme.colorScheme.tertiary
+                            "calificada" -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.primary
+                        },
+                        modifier = Modifier.size(32.dp)
+                    )
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = when (entrega.estado) {
-                        "borrador" -> "Borrador Guardado"
-                        "enviada" -> "Entrega Realizada"
-                        "tarde" -> "Entrega Tardía"
-                        "calificada" -> "Entrega Calificada"
-                        else -> "Entrega Realizada"
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                if (entrega.fechaEntrega.isNotEmpty()) {
+                    Column {
+                        Text(
+                            text = when (entrega.estado) {
+                                "borrador" -> "Borrador Guardado"
+                                "enviada" -> "Entrega Realizada"
+                                "tarde" -> "Entrega Tardía"
+                                "calificada" -> "Entrega Calificada"
+                                else -> "Entrega Realizada"
+                            },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (entrega.fechaEntrega.isNotEmpty()) {
+                            Text(
+                                text = formatFecha(entrega.fechaEntrega),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+
+                // Botones de acción solo si es borrador
+                if (puedeEditar) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        IconButton(
+                            onClick = onEditar,
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Editar",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(
+                            onClick = onEliminar,
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
+                            )
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Eliminar",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Texto de respuesta
+            if (entrega.textoRespuesta.isNotEmpty()) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(12.dp)
+                ) {
                     Text(
-                        text = formatFecha(entrega.fechaEntrega),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        text = "Respuesta:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = entrega.textoRespuesta,
+                        style = MaterialTheme.typography.bodyMedium,
+                        lineHeight = 20.sp
                     )
                 }
             }
-        }
 
-        // Calificación si existe
-        if (entrega.nota != null && entrega.nota != "null") {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
-                        RoundedCornerShape(8.dp)
+            // Archivos adjuntos
+            if (entrega.archivos.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Archivos adjuntos (${entrega.archivos.size}):",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
                     )
-                    .padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Calificación:",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = entrega.nota,
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.tertiary
-                )
+                    entrega.archivos.forEach { archivo ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.AttachFile,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = archivo.substringAfterLast("/"),
+                                style = MaterialTheme.typography.bodySmall,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
             }
-        }
 
-        // Comentario del profesor
-        if (entrega.comentario != null && entrega.comentario != "null") {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f),
-                        RoundedCornerShape(8.dp)
+            // Calificación si existe
+            if (entrega.nota != null && entrega.nota != "null") {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Calificación:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
                     )
-                    .padding(12.dp)
-            ) {
-                Text(
-                    text = "Comentario del Profesor:",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = entrega.comentario,
-                    style = MaterialTheme.typography.bodyMedium,
-                    lineHeight = 20.sp
-                )
+                    Text(
+                        text = entrega.nota,
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+            }
+
+            // Comentario del profesor
+            if (entrega.comentario != null && entrega.comentario != "null") {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = "Comentario del Profesor:",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = entrega.comentario,
+                        style = MaterialTheme.typography.bodyMedium,
+                        lineHeight = 20.sp
+                    )
+                }
             }
         }
     }
@@ -551,43 +793,44 @@ fun ResumenEntregaCard(entrega: Entrega) {
 
 @Composable
 fun NoEntregaCard(estado: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                RoundedCornerShape(12.dp)
-            )
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        )
     ) {
-        Icon(
-            imageVector = Icons.Default.Assignment,
-            contentDescription = null,
-            modifier = Modifier.size(48.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
-        )
+        Column(
+            modifier = Modifier.padding(32.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Assignment,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+            )
 
-        Text(
-            text = if (estado == "cerrada")
-                "No Entregaste esta Tarea"
-            else
-                "Pendiente de Entrega",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
+            Text(
+                text = if (estado == "cerrada")
+                    "No Entregaste esta Tarea"
+                else
+                    "Pendiente de Entrega",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
 
-        Text(
-            text = if (estado == "cerrada")
-                "La fecha límite ha pasado"
-            else
-                "Presiona el botón flotante para realizar tu entrega",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            textAlign = TextAlign.Center
-        )
+            Text(
+                text = if (estado == "cerrada")
+                    "La fecha límite ha pasado"
+                else
+                    "Presiona el botón flotante para realizar tu entrega",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
@@ -612,7 +855,7 @@ fun EstadoBadge(estado: String) {
     ) {
         Text(
             text = texto,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = textColor
@@ -656,7 +899,7 @@ fun EstadoChip(estado: String) {
     ) {
         Text(
             text = texto,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             color = textColor
@@ -767,6 +1010,7 @@ fun TareaEmptyView(onBack: () -> Unit) {
         }
     }
 }
+
 fun formatFecha(fecha: String): String {
     return try {
         if (fecha.isEmpty()) return "Sin fecha"

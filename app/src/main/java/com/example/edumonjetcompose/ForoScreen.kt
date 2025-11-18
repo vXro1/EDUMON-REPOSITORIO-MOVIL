@@ -40,6 +40,7 @@ import com.example.edumonjetcompose.models.UsuarioInfo
 import com.example.edumonjetcompose.network.ApiService
 import com.google.gson.JsonObject
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -58,7 +59,6 @@ fun ForoScreen(
     var isRefreshing by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Función para cargar foros
@@ -212,7 +212,6 @@ fun ForoScreen(
                             )
                         }
 
-                        // Espaciado final
                         item {
                             Spacer(modifier = Modifier.height(16.dp))
                         }
@@ -220,7 +219,6 @@ fun ForoScreen(
                 }
             }
 
-            // Indicador de refresco
             if (isRefreshing) {
                 LinearProgressIndicator(
                     modifier = Modifier
@@ -253,7 +251,6 @@ fun ForoCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Header con docente y estado
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -292,13 +289,11 @@ fun ForoCard(
                     }
                 }
 
-                // Estado badge
                 EstadoForoBadge(estado = foro.estado)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Título
             Text(
                 text = foro.titulo,
                 style = MaterialTheme.typography.titleLarge,
@@ -308,7 +303,6 @@ fun ForoCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Descripción
             Text(
                 text = foro.descripcion,
                 style = MaterialTheme.typography.bodyMedium,
@@ -317,20 +311,16 @@ fun ForoCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            // Archivos adjuntos preview
             if (foro.archivos.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Vista previa de imágenes
                 val imagenesEnForo = foro.archivos.filter { it.tipo == "imagen" }
                 if (imagenesEnForo.isNotEmpty()) {
                     ImagenesPreview(imagenes = imagenesEnForo.take(3))
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         imageVector = Icons.Default.Attachment,
                         contentDescription = null,
@@ -353,7 +343,6 @@ fun ForoCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Footer con estadísticas
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -418,15 +407,26 @@ fun ForoDetalleScreen(
         archivosSeleccionados = uris
     }
 
-    // Cargar datos
+    // Cargar datos EN PARALELO para evitar el error 404
     fun cargarDatos() {
         scope.launch {
             try {
                 isLoading = true
                 errorMessage = null
 
-                // Cargar foro
-                val foroResponse = ApiService.getForoById(token, foroId)
+                // ✅ CARGAR EN PARALELO usando async
+                val foroDeferred = async {
+                    ApiService.getForoById(token, foroId)
+                }
+                val mensajesDeferred = async {
+                    ApiService.getMensajesForo(token, foroId)
+                }
+
+                // Esperar ambas respuestas
+                val foroResponse = foroDeferred.await()
+                val mensajesResponse = mensajesDeferred.await()
+
+                // Procesar foro
                 if (foroResponse.isSuccessful) {
                     val foroObj = foroResponse.body()?.getAsJsonObject("foro")
                     foroObj?.let {
@@ -461,17 +461,29 @@ fun ForoDetalleScreen(
                     }
                 }
 
-                // Cargar mensajes
-                val mensajesResponse = ApiService.getMensajesForo(token, foroId)
+                // Procesar mensajes
                 if (mensajesResponse.isSuccessful) {
                     val mensajesArray = mensajesResponse.body()?.getAsJsonArray("mensajes")
+
+                    // ✅ DEBUG: Log para ver qué está llegando
+                    android.util.Log.d("ForoDetalle", "📦 Mensajes recibidos: ${mensajesArray?.size() ?: 0}")
+                    android.util.Log.d("ForoDetalle", "📄 JSON completo: ${mensajesResponse.body()}")
+
                     mensajes = mensajesArray?.mapNotNull {
                         try {
-                            parseMensaje(it.asJsonObject)
+                            val mensaje = parseMensaje(it.asJsonObject)
+                            android.util.Log.d("ForoDetalle", "✅ Mensaje parseado: ${mensaje.id} - ${mensaje.contenido.take(50)}")
+                            mensaje
                         } catch (e: Exception) {
+                            android.util.Log.e("ForoDetalle", "❌ Error parseando mensaje: ${e.message}", e)
+                            android.util.Log.e("ForoDetalle", "JSON del mensaje con error: ${it.asJsonObject}")
                             null
                         }
                     } ?: emptyList()
+
+                    android.util.Log.d("ForoDetalle", "📊 Total mensajes parseados: ${mensajes.size}")
+                } else {
+                    android.util.Log.e("ForoDetalle", "❌ Error en response de mensajes: ${mensajesResponse.code()}")
                 }
 
             } catch (e: Exception) {
@@ -527,7 +539,6 @@ fun ForoDetalleScreen(
                             .fillMaxWidth()
                             .padding(16.dp)
                     ) {
-                        // Indicador de respuesta
                         AnimatedVisibility(
                             visible = respuestaA != null,
                             enter = expandVertically() + fadeIn(),
@@ -573,7 +584,6 @@ fun ForoDetalleScreen(
                             Spacer(modifier = Modifier.height(8.dp))
                         }
 
-                        // Archivos seleccionados
                         AnimatedVisibility(
                             visible = archivosSeleccionados.isNotEmpty(),
                             enter = expandVertically() + fadeIn(),
@@ -600,7 +610,6 @@ fun ForoDetalleScreen(
                             }
                         }
 
-                        // Campo de entrada
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.Bottom
@@ -652,7 +661,6 @@ fun ForoDetalleScreen(
                                                     cargarDatos()
                                                     snackbarHostState.showSnackbar("Mensaje enviado")
 
-                                                    // Scroll al final
                                                     launch {
                                                         listState.animateScrollToItem(mensajes.size)
                                                     }
@@ -760,16 +768,12 @@ fun ForoDetalleScreen(
                         contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Header del foro
                         item {
                             ForoHeaderCard(foro = foro!!)
                         }
 
-                        // Título de mensajes
                         item {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Default.Forum,
                                     contentDescription = null,
@@ -785,7 +789,6 @@ fun ForoDetalleScreen(
                             }
                         }
 
-                        // Mensajes
                         if (mensajes.isEmpty()) {
                             item {
                                 Card(
@@ -834,10 +837,14 @@ fun ForoDetalleScreen(
                                     onLike = {
                                         scope.launch {
                                             try {
-                                                ApiService.toggleLikeMensaje(token, mensaje.id)
-                                                cargarDatos()
+                                                val response = ApiService.toggleLikeMensaje(token, mensaje.id)
+                                                if (response.isSuccessful) {
+                                                    cargarDatos()
+                                                } else {
+                                                    snackbarHostState.showSnackbar("Error al dar like")
+                                                }
                                             } catch (e: Exception) {
-                                                snackbarHostState.showSnackbar("Error al dar like")
+                                                snackbarHostState.showSnackbar("Error: ${e.localizedMessage}")
                                             }
                                         }
                                     }
@@ -845,7 +852,6 @@ fun ForoDetalleScreen(
                             }
                         }
 
-                        // Espaciado final
                         item {
                             Spacer(modifier = Modifier.height(80.dp))
                         }
@@ -915,7 +921,6 @@ fun ForoHeaderCard(foro: Foro) {
                 color = MaterialTheme.colorScheme.onPrimaryContainer
             )
 
-            // Archivos del foro
             if (foro.archivos.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -928,14 +933,12 @@ fun ForoHeaderCard(foro: Foro) {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Mostrar imágenes primero
                 val imagenes = foro.archivos.filter { it.tipo == "imagen" }
                 if (imagenes.isNotEmpty()) {
                     ImagenesGrid(imagenes = imagenes)
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Otros archivos
                 foro.archivos.forEach { archivo ->
                     ArchivoChip(archivo = archivo)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -953,6 +956,7 @@ fun MensajeCard(
     onLike: () -> Unit
 ) {
     val isPropio = mensaje.usuarioId.id == userId
+    val yaLeDioLike = mensaje.likes.contains(userId)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -970,7 +974,6 @@ fun MensajeCard(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // Header del mensaje
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -1044,25 +1047,21 @@ fun MensajeCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Contenido del mensaje
             Text(
                 text = mensaje.contenido,
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
 
-            // Archivos del mensaje
             if (mensaje.archivos.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Imágenes
                 val imagenes = mensaje.archivos.filter { it.tipo == "imagen" }
                 if (imagenes.isNotEmpty()) {
                     ImagenesGrid(imagenes = imagenes)
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // Otros archivos
                 mensaje.archivos.filter { it.tipo != "imagen" }.forEach { archivo ->
                     ArchivoChip(archivo = archivo)
                     Spacer(modifier = Modifier.height(6.dp))
@@ -1075,28 +1074,27 @@ fun MensajeCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Acciones
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Like button
+                    // ✅ BOTÓN DE LIKE CON ANIMACIÓN
                     IconButton(
                         onClick = onLike,
                         modifier = Modifier.size(40.dp)
                     ) {
                         Icon(
-                            imageVector = if (mensaje.likes.contains(userId))
-                                Icons.Default.Favorite
+                            imageVector = if (yaLeDioLike)
+                                Icons.Default.ThumbUp
                             else
-                                Icons.Default.FavoriteBorder,
+                                Icons.Default.ThumbUpOffAlt,
                             contentDescription = "Me gusta",
-                            tint = if (mensaje.likes.contains(userId))
-                                Color(0xFFE91E63)
+                            tint = if (yaLeDioLike)
+                                Color(0xFF2196F3) // Azul cuando le dio like
                             else
-                                MaterialTheme.colorScheme.onSurface,
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -1105,15 +1103,14 @@ fun MensajeCard(
                             text = "${mensaje.likes.size}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (mensaje.likes.contains(userId))
-                                Color(0xFFE91E63)
+                            color = if (yaLeDioLike)
+                                Color(0xFF2196F3)
                             else
                                 MaterialTheme.colorScheme.onSurface
                         )
                     }
                 }
 
-                // Responder (solo si es del docente o para iniciar conversación)
                 if (mensaje.usuarioId.rol == "docente" || mensaje.respuestas.isEmpty()) {
                     TextButton(
                         onClick = onResponder,
@@ -1130,7 +1127,6 @@ fun MensajeCard(
                 }
             }
 
-            // Respuestas
             if (mensaje.respuestas.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -1150,7 +1146,13 @@ fun MensajeCard(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     mensaje.respuestas.forEach { respuesta ->
-                        RespuestaCard(respuesta = respuesta, userId = userId)
+                        RespuestaCard(
+                            respuesta = respuesta,
+                            userId = userId,
+                            onLike = {
+                                onLike()
+                            }
+                        )
                     }
                 }
             }
@@ -1161,9 +1163,11 @@ fun MensajeCard(
 @Composable
 fun RespuestaCard(
     respuesta: MensajeForo,
-    userId: String
+    userId: String,
+    onLike: () -> Unit
 ) {
     val isPropio = respuesta.usuarioId.id == userId
+    val yaLeDioLike = respuesta.likes.contains(userId)
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1244,6 +1248,44 @@ fun RespuestaCard(
                     Spacer(modifier = Modifier.height(4.dp))
                 }
             }
+
+            // ✅ LIKES EN RESPUESTAS
+            if (respuesta.likes.isNotEmpty() || true) {
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onLike,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (yaLeDioLike)
+                                Icons.Default.ThumbUp
+                            else
+                                Icons.Default.ThumbUpOffAlt,
+                            contentDescription = "Me gusta",
+                            tint = if (yaLeDioLike)
+                                Color(0xFF2196F3)
+                            else
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    if (respuesta.likes.isNotEmpty()) {
+                        Text(
+                            text = "${respuesta.likes.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (yaLeDioLike)
+                                Color(0xFF2196F3)
+                            else
+                                MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1272,7 +1314,6 @@ fun ArchivoChip(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable {
-                    // Abrir archivo en navegador
                     try {
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(archivo.url))
                         context.startActivity(intent)
@@ -1323,7 +1364,6 @@ fun ImagenesGrid(imagenes: List<ArchivoForo>, small: Boolean = false) {
 
     when (imagenes.size) {
         1 -> {
-            // Una sola imagen - grande
             AsyncImage(
                 model = ImageRequest.Builder(context)
                     .data(imagenes[0].url)
@@ -1344,7 +1384,6 @@ fun ImagenesGrid(imagenes: List<ArchivoForo>, small: Boolean = false) {
             )
         }
         2 -> {
-            // Dos imágenes - lado a lado
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1372,7 +1411,6 @@ fun ImagenesGrid(imagenes: List<ArchivoForo>, small: Boolean = false) {
             }
         }
         else -> {
-            // 3 o más imágenes - grid
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -1572,7 +1610,7 @@ fun ErrorView(message: String, onRetry: () -> Unit) {
             text = message,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.error,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(24.dp))
         Button(onClick = onRetry) {
@@ -1609,7 +1647,7 @@ fun EmptyForosView() {
             text = "Los foros del curso aparecerán aquí",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            textAlign = TextAlign.Center
         )
     }
 }
@@ -1618,6 +1656,21 @@ fun EmptyForosView() {
 
 fun parseMensaje(mensajeObj: JsonObject): MensajeForo {
     val usuarioObj = mensajeObj.getAsJsonObject("usuarioId")
+
+    // ✅ PARSEAR LIKES CORRECTAMENTE - puede venir como array o como número
+    val likesLista = try {
+        val likedByElement = mensajeObj.get("likedBy")
+        when {
+            likedByElement != null && likedByElement.isJsonArray -> {
+                likedByElement.asJsonArray.mapNotNull {
+                    try { it.asString } catch (e: Exception) { null }
+                }
+            }
+            else -> emptyList()
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
 
     return MensajeForo(
         id = mensajeObj.get("_id")?.asString ?: "",
@@ -1630,9 +1683,7 @@ fun parseMensaje(mensajeObj: JsonObject): MensajeForo {
             rol = usuarioObj.get("rol")?.asString ?: "padre"
         ),
         fechaCreacion = mensajeObj.get("fechaCreacion")?.asString ?: "",
-        likes = mensajeObj.getAsJsonArray("likes")?.mapNotNull {
-            try { it.asString } catch (e: Exception) { null }
-        } ?: emptyList(),
+        likes = likesLista,
         archivos = mensajeObj.getAsJsonArray("archivos")?.mapNotNull { archivo ->
             try {
                 val archivoObj = archivo.asJsonObject
@@ -1681,4 +1732,3 @@ fun formatearFecha(fechaStr: String): String {
         fechaStr
     }
 }
-

@@ -36,6 +36,7 @@ import com.example.edumonjetcompose.models.CursoItem
 import com.example.edumonjetcompose.network.ApiService
 import com.example.edumonjetcompose.ui.theme.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -54,6 +55,39 @@ fun ProfesorHomeScreen(
     var cursos by remember { mutableStateOf<List<CursoItem>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    // 🔔 Estado para notificaciones
+    var notificacionesNoLeidas by remember { mutableStateOf(0) }
+
+    // 🔔 Función para cargar el contador de notificaciones
+    fun cargarContadorNotificaciones() {
+        if (token.isNullOrEmpty()) return
+
+        scope.launch {
+            try {
+                val response = withContext(Dispatchers.IO) {
+                    ApiService.getMisNotificaciones(
+                        token = token!!,
+                        page = 1,
+                        limit = 1,
+                        leida = false
+                    )
+                }
+
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    val noLeidas = body?.get("noLeidas")?.asInt ?: 0
+
+                    withContext(Dispatchers.Main) {
+                        notificacionesNoLeidas = noLeidas
+                        android.util.Log.d("ProfesorHome", " Notificaciones no leídas: $noLeidas")
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ProfesorHome", "Error al cargar notificaciones: ${e.message}")
+            }
+        }
+    }
 
     // Cargar datos del usuario y token
     LaunchedEffect(Unit) {
@@ -122,6 +156,9 @@ fun ProfesorHomeScreen(
                 android.util.Log.d("ProfesorHome", "✅ Cursos cargados: ${cursosResponse.size}")
                 cursos = cursosResponse
                 isLoading = false
+
+                // 🔔 Cargar notificaciones después de cargar cursos
+                cargarContadorNotificaciones()
             }
         } catch (e: Exception) {
             android.util.Log.e("ProfesorHome", "❌ Error en LaunchedEffect", e)
@@ -129,6 +166,16 @@ fun ProfesorHomeScreen(
                 Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
                 errorMessage = "Error: ${e.message}"
                 isLoading = false
+            }
+        }
+    }
+
+    // 🔔 Actualización periódica de notificaciones cada 60 segundos
+    LaunchedEffect(token) {
+        if (!token.isNullOrEmpty()) {
+            while (true) {
+                delay(60000) // 60 segundos
+                cargarContadorNotificaciones()
             }
         }
     }
@@ -166,11 +213,36 @@ fun ProfesorHomeScreen(
                     )
                 )
 
+                // 🔔 Navegación a Notificaciones con Badge
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Notifications, contentDescription = "Notificaciones") },
+                    icon = {
+                        BadgedBox(
+                            badge = {
+                                if (notificacionesNoLeidas > 0) {
+                                    Badge(
+                                        containerColor = Error,
+                                        contentColor = Color.White
+                                    ) {
+                                        Text(
+                                            text = if (notificacionesNoLeidas > 99) "99+" else notificacionesNoLeidas.toString(),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.Notifications,
+                                contentDescription = "Notificaciones"
+                            )
+                        }
+                    },
                     label = { Text("Avisos", fontWeight = FontWeight.Medium) },
                     selected = false,
-                    onClick = { Toast.makeText(context, "Notificaciones", Toast.LENGTH_SHORT).show() },
+                    onClick = {
+                        navController.navigate("notificaciones")
+                    },
                     colors = NavigationBarItemDefaults.colors(
                         selectedIconColor = AzulCielo,
                         selectedTextColor = AzulCielo,
@@ -371,6 +443,35 @@ fun ProfesorHomeScreen(
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = Color.White.copy(alpha = 0.9f)
                                         )
+                                    }
+
+                                    // 🔔 Badge de notificaciones en el header
+                                    if (notificacionesNoLeidas > 0) {
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Row(
+                                            modifier = Modifier
+                                                .background(
+                                                    Color.White.copy(alpha = 0.2f),
+                                                    RoundedCornerShape(12.dp)
+                                                )
+                                                .clickable { navController.navigate("notificaciones") }
+                                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Notifications,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                            Text(
+                                                text = "$notificacionesNoLeidas nuevas",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
 
@@ -608,12 +709,7 @@ fun cargarCursos(
 
                     val participantesArray = cursoJson.getAsJsonArray("participantes")
                     val totalParticipantes = participantesArray?.size() ?: 0
-
-                    // CORRECCIÓN: Obtener correctamente la URL de la imagen
                     val fotoPortadaUrl = cursoJson.get("fotoPortadaUrl")?.takeIf { !it.isJsonNull }?.asString
-
-                    android.util.Log.d("CargaCursos", "📷 Curso: ${cursoJson.get("nombre")?.asString}")
-                    android.util.Log.d("CargaCursos", "   URL: $fotoPortadaUrl")
 
                     CursoItem(
                         id = cursoJson.get("_id")?.asString ?: "",
@@ -631,21 +727,13 @@ fun cargarCursos(
                 }
             } else {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        "Error al cargar cursos: ${response.code()}",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    Toast.makeText(context, "Error al cargar cursos: ${response.code()}", Toast.LENGTH_SHORT).show()
                     onResult(emptyList())
                 }
             }
         } catch (e: Exception) {
             withContext(Dispatchers.Main) {
-                Toast.makeText(
-                    context,
-                    "Error: ${e.message}",
-                    Toast.LENGTH_SHORT
-                ).show()
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                 onResult(emptyList())
             }
         }
@@ -664,13 +752,10 @@ fun CursoCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        ),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Imagen del curso con gradiente overlay
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -689,18 +774,12 @@ fun CursoCard(
                         model = ImageRequest.Builder(context)
                             .data(curso.fotoPortadaUrl)
                             .crossfade(true)
-                            .placeholder(android.R.drawable.ic_menu_gallery)
-                            .error(android.R.drawable.ic_menu_report_image)
                             .build(),
                         contentDescription = "Portada del curso",
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop,
-                        onError = {
-                            android.util.Log.e("CursoCard", "❌ Error cargando imagen: ${curso.fotoPortadaUrl}")
-                        }
+                        contentScale = ContentScale.Crop
                     )
                 } else {
-                    // Placeholder con icono
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
@@ -714,7 +793,6 @@ fun CursoCard(
                     }
                 }
 
-                // Overlay con gradiente
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -728,7 +806,6 @@ fun CursoCard(
                         )
                 )
 
-                // Badge de estado
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -749,7 +826,6 @@ fun CursoCard(
                 }
             }
 
-            // Contenido del curso
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -779,7 +855,6 @@ fun CursoCard(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Footer con participantes y acción
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,

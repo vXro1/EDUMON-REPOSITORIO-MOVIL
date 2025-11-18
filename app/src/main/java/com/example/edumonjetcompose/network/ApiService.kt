@@ -4,11 +4,13 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.webkit.MimeTypeMap
+import com.example.edumonjetcompose.models.FcmTokenResponse
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import com.example.edumonjetcompose.network.ApiRoutes
+import com.example.edumonjetcompose.ui.TAG
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
@@ -77,19 +79,47 @@ object ApiService {
 
     suspend fun getProfile(token: String): Response<JsonObject> =
         api.getProfile("Bearer $token")
+    suspend fun actualizarFcmToken(
+        authToken: String,
+        fcmToken: String
+    ): Response<FcmTokenResponse> {
+        return try {
+            val body = mapOf("fcmToken" to fcmToken)
+            val response = api.actualizarFcmToken(
+                token = "Bearer $authToken",
+                body = body
+            )
+
+            if (response.isSuccessful) {
+                Log.d(TAG, "✅ Token FCM actualizado en servidor")
+            } else {
+                Log.e(TAG, "❌ Error al actualizar token FCM: ${response.code()}")
+            }
+
+            response
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Excepción al actualizar token FCM: ${e.message}", e)
+            throw e
+        }
+    }
+
+    // En ApiService.kt - REEMPLAZA el método changePassword existente
 
     suspend fun changePassword(
         token: String,
         contraseñaActual: String,
-        nuevaContraseña: String
+        contraseñaNueva: String
     ): Response<JsonObject> {
         val body = JsonObject().apply {
             addProperty("contraseñaActual", contraseñaActual)
-            addProperty("nuevaContraseña", nuevaContraseña)
+            addProperty("contraseñaNueva", contraseñaNueva)
         }
+
+        Log.d("ApiService", "🔐 Cambiando contraseña...")
+        Log.d("ApiService", "Body: $body")
+
         return api.changePassword("Bearer $token", body)
     }
-
     suspend fun logout(token: String): Response<JsonObject> =
         api.logout("Bearer $token")
 
@@ -273,19 +303,18 @@ object ApiService {
     suspend fun createModulo(
         token: String,
         cursoId: String,
-        nombre: String,
+        titulo: String,
         descripcion: String?,
         orden: Int?
     ): Response<JsonObject> {
         val body = JsonObject().apply {
             addProperty("cursoId", cursoId)
-            addProperty("nombre", nombre)
+            addProperty("titulo", titulo)  // ✅ Cambiado de "Titulo" a "titulo"
             descripcion?.let { addProperty("descripcion", it) }
             orden?.let { addProperty("orden", it) }
         }
         return api.createModulo("Bearer $token", body)
     }
-
 
     suspend fun getModulosByCurso(token: String, cursoId: String): Response<JsonObject> =
         api.getModulosByCurso("Bearer $token", cursoId)
@@ -293,12 +322,12 @@ object ApiService {
     suspend fun updateModulo(
         token: String,
         moduloId: String,
-        nombre: String?,
+        titulo: String?,
         descripcion: String?,
         orden: Int?
     ): Response<JsonObject> {
         val body = JsonObject().apply {
-            nombre?.let { addProperty("nombre", it) }
+            titulo?.let { addProperty("nombre", it) }
             descripcion?.let { addProperty("descripcion", it) }
             orden?.let { addProperty("orden", it) }
         }
@@ -642,57 +671,78 @@ object ApiService {
     suspend fun getEntregaById(token: String, entregaId: String): Response<JsonObject> =
         api.getEntregaById("Bearer $token", entregaId)
 
-    // ==================== NOTIFICACIONES ====================
-    suspend fun createNotificacion(
-        token: String,
-        usuarioId: String,
-        titulo: String,
-        mensaje: String,
-        tipo: String
-    ): Response<JsonObject> {
-        val body = JsonObject().apply {
-            addProperty("usuarioId", usuarioId)
-            addProperty("titulo", titulo)
-            addProperty("mensaje", mensaje)
-            addProperty("tipo", tipo)
-        }
-        return api.createNotificacion("Bearer $token", body)
-    }
+// Agregar estas funciones a tu ApiService existente
 
     suspend fun getMisNotificaciones(
         token: String,
         page: Int = 1,
-        limit: Int = 10,
+        limit: Int = 20,
         leida: Boolean? = null
-    ): Response<JsonObject> =
-        api.getMisNotificaciones("Bearer $token", page, limit, leida)
+    ): Response<JsonObject> {
+        android.util.Log.d("ApiService", """
+            📡 getMisNotificaciones
+               Token: ${token.take(50)}...
+               Page: $page
+               Limit: $limit
+               Leida: $leida
+        """.trimIndent())
 
-    suspend fun getConteoNoLeidas(token: String): Response<JsonObject> =
-        api.getConteoNoLeidas("Bearer $token")
+        return api.getMisNotificaciones(
+            token = "Bearer $token",
+            page = page,
+            limit = limit,
+            leido = leida
+        )
+    }
 
-    suspend fun getNotificacionById(token: String, notificacionId: String): Response<JsonObject> =
-        api.getNotificacionById("Bearer $token", notificacionId)
+    suspend fun getConteoNoLeidas(token: String): Response<JsonObject> {
+        android.util.Log.d("ApiService", "📡 getConteoNoLeidas")
+        return api.getConteoNoLeidas("Bearer $token")
+    }
 
-    suspend fun marcarComoLeida(token: String, notificacionId: String): Response<JsonObject> =
-        api.marcarComoLeida("Bearer $token", notificacionId)
+    suspend fun getNotificacionById(
+        token: String,
+        notificacionId: String
+    ): Response<JsonObject> {
+        android.util.Log.d("ApiService", "📡 getNotificacionById: $notificacionId")
+        return api.getNotificacionById("Bearer $token", notificacionId)
+    }
 
-    suspend fun marcarVariasLeidas(token: String, notificacionIds: List<String>): Response<JsonObject> {
+    suspend fun marcarComoLeida(
+        token: String,
+        notificacionId: String
+    ): Response<JsonObject> {
+        android.util.Log.d("ApiService", "📡 marcarComoLeida: $notificacionId")
+        return api.marcarComoLeida("Bearer $token", notificacionId)
+    }
+
+    suspend fun marcarVariasLeidas(
+        token: String,
+        notificacionIds: List<String>
+    ): Response<JsonObject> {
+        android.util.Log.d("ApiService", "📡 marcarVariasLeidas: ${notificacionIds.size} notificaciones")
+
         val body = JsonObject().apply {
-            add("notificacionIds", JsonArray().apply {
+            add("notificacionIds", com.google.gson.JsonArray().apply {
                 notificacionIds.forEach { add(it) }
             })
         }
+
         return api.marcarVariasLeidas("Bearer $token", body)
     }
 
-    suspend fun marcarTodasLeidas(token: String): Response<JsonObject> =
-        api.marcarTodasLeidas("Bearer $token")
+    suspend fun marcarTodasLeidas(token: String): Response<JsonObject> {
+        android.util.Log.d("ApiService", "📡 marcarTodasLeidas")
+        return api.marcarTodasLeidas("Bearer $token")
+    }
 
-    suspend fun deleteNotificacion(token: String, notificacionId: String): Response<JsonObject> =
-        api.deleteNotificacion("Bearer $token", notificacionId)
-
-    suspend fun eliminarLeidasAntiguas(token: String): Response<JsonObject> =
-        api.eliminarLeidasAntiguas("Bearer $token")
+    suspend fun deleteNotificacion(
+        token: String,
+        notificacionId: String
+    ): Response<JsonObject> {
+        android.util.Log.d("ApiService", "📡 deleteNotificacion: $notificacionId")
+        return api.deleteNotificacion("Bearer $token", notificacionId)
+    }
 
     // ==================== CALENDARIO ====================
     suspend fun getCalendarioCurso(

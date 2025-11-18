@@ -4,19 +4,24 @@ import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.pager.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -39,11 +44,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-
+import java.util.*
 
 // ==================== PANTALLA PRINCIPAL ====================
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun InfoCursoScreenProfesor(
     navController: NavController,
@@ -53,23 +58,26 @@ fun InfoCursoScreenProfesor(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val pagerState = rememberPagerState(pageCount = { 3 })
 
     var cursoDetalle by remember { mutableStateOf<CursoDetalleProfesor?>(null) }
     var modulos by remember { mutableStateOf<List<ModuloConTareas>>(emptyList()) }
     var foros by remember { mutableStateOf<List<ForoInfo>>(emptyList()) }
     var proximosEventos by remember { mutableStateOf<List<EventoInfo>>(emptyList()) }
+    var eventosDelMes by remember { mutableStateOf<Map<Int, List<EventoInfo>>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     var showEditDialog by remember { mutableStateOf(false) }
     var showImagePicker by remember { mutableStateOf(false) }
+    var selectedMonth by remember { mutableStateOf(Calendar.getInstance().get(Calendar.MONTH) + 1) }
+    var selectedYear by remember { mutableStateOf(Calendar.getInstance().get(Calendar.YEAR)) }
 
     suspend fun cargarDatosCurso() {
         isLoading = true
         errorMessage = null
 
         try {
-            // Cargar datos del curso
             val cursoResponse = withContext(Dispatchers.IO) {
                 ApiService.getCursoById(token, cursoId)
             }
@@ -104,7 +112,6 @@ fun InfoCursoScreenProfesor(
                 modulosCount = 0
             )
 
-            // Cargar módulos y tareas
             val modulosResponse = withContext(Dispatchers.IO) {
                 ApiService.getModulosByCurso(token, cursoId)
             }
@@ -183,7 +190,6 @@ fun InfoCursoScreenProfesor(
                 cursoDetalle = cursoDetalle?.copy(modulosCount = modulosList.size)
             }
 
-            // Cargar foros
             val forosResponse = withContext(Dispatchers.IO) {
                 ApiService.getForosPorCurso(token, cursoId)
             }
@@ -214,34 +220,87 @@ fun InfoCursoScreenProfesor(
                 foros = forosList
             }
 
-            // Cargar próximos eventos
-            val eventosResponse = withContext(Dispatchers.IO) {
-                ApiService.getProximosEventos(token, cursoId, limite = 5)
+            // 📅 CARGAR PRÓXIMOS EVENTOS CORREGIDO
+            try {
+                Log.d("InfoCursoProfesor", "🔍 Cargando próximos eventos del curso")
+
+                val eventosResponse = withContext(Dispatchers.IO) {
+                    ApiService.getProximosEventos(token, cursoId, limite = 5)
+                }
+
+                if (eventosResponse.isSuccessful) {
+                    val eventosBody = eventosResponse.body()
+                    Log.d("InfoCursoProfesor", "✅ Respuesta próximos eventos: ${eventosBody?.toString()}")
+
+                    val proximosEventosArray = eventosBody?.getAsJsonArray("proximosEventos") ?: JsonArray()
+
+                    val eventosList = mutableListOf<EventoInfo>()
+                    for (eventoElem in proximosEventosArray) {
+                        val e = eventoElem.asJsonObject
+                        val tipo = e.get("tipo")?.asString ?: ""
+
+                        // Agregar tanto tareas como eventos
+                        eventosList.add(
+                            EventoInfo(
+                                id = e.get("id")?.asString ?: "",
+                                titulo = e.get("titulo")?.asString ?: "Sin título",
+                                descripcion = "",
+                                fecha = e.get("fecha")?.asString ?: "",
+                                hora = null,
+                                categoria = if (tipo == "tarea") "tarea" else "evento"
+                            )
+                        )
+                    }
+                    proximosEventos = eventosList
+                    Log.d("InfoCursoProfesor", "✅ Próximos eventos cargados: ${eventosList.size}")
+                } else {
+                    Log.e("InfoCursoProfesor", "❌ Error en respuesta: ${eventosResponse.code()}")
+                }
+            } catch (e: Exception) {
+                Log.e("InfoCursoProfesor", "❌ Error cargando próximos eventos", e)
             }
 
-            if (eventosResponse.isSuccessful) {
-                val eventosBody = eventosResponse.body()
-                val eventosJson = when {
-                    eventosBody?.has("eventos") == true -> eventosBody.getAsJsonArray("eventos")
-                    eventosBody?.isJsonArray == true -> eventosBody.asJsonArray
-                    else -> JsonArray()
+            // 📅 CARGAR CALENDARIO DEL MES CORREGIDO
+            try {
+                Log.d("InfoCursoProfesor", "🔍 Cargando calendario: mes=$selectedMonth, año=$selectedYear")
+
+                val calendarioResponse = withContext(Dispatchers.IO) {
+                    ApiService.getCalendarioCurso(token, cursoId, selectedMonth, selectedYear)
                 }
 
-                val eventosList = mutableListOf<EventoInfo>()
-                for (eventoElem in eventosJson) {
-                    val e = eventoElem.asJsonObject
-                    eventosList.add(
-                        EventoInfo(
-                            id = e.get("_id")?.asString ?: "",
-                            titulo = e.get("titulo")?.asString ?: "Sin título",
-                            descripcion = e.get("descripcion")?.asString ?: "",
-                            fecha = e.get("fechaInicio")?.asString ?: "",
-                            hora = e.get("hora")?.asString,
-                            categoria = e.get("categoria")?.asString ?: "general"
+                if (calendarioResponse.isSuccessful) {
+                    val calendarioBody = calendarioResponse.body()
+                    Log.d("InfoCursoProfesor", "✅ Respuesta calendario: ${calendarioBody?.toString()}")
+
+                    val itemsArray = calendarioBody?.getAsJsonArray("items") ?: JsonArray()
+
+                    val eventosPorDia = mutableMapOf<Int, MutableList<EventoInfo>>()
+
+                    for (itemElem in itemsArray) {
+                        val item = itemElem.asJsonObject
+                        val fechaInicio = item.get("fecha")?.asString ?: continue
+                        val dia = obtenerDiaNumero(fechaInicio)
+                        val tipo = item.get("tipo")?.asString ?: "evento"
+
+                        val evento = EventoInfo(
+                            id = item.get("id")?.asString ?: "",
+                            titulo = item.get("titulo")?.asString ?: "Sin título",
+                            descripcion = item.get("descripcion")?.asString ?: "",
+                            fecha = fechaInicio,
+                            hora = item.get("hora")?.asString,
+                            categoria = if (tipo == "tarea") "tarea" else (item.get("categoria")?.asString ?: "general")
                         )
-                    )
+
+                        eventosPorDia.getOrPut(dia) { mutableListOf() }.add(evento)
+                    }
+
+                    eventosDelMes = eventosPorDia
+                    Log.d("InfoCursoProfesor", "✅ Eventos del mes cargados: ${eventosPorDia.size} días con eventos")
+                } else {
+                    Log.e("InfoCursoProfesor", "❌ Error en respuesta calendario: ${calendarioResponse.code()}")
                 }
-                proximosEventos = eventosList
+            } catch (e: Exception) {
+                Log.e("InfoCursoProfesor", "❌ Error cargando calendario", e)
             }
 
         } catch (e: Exception) {
@@ -252,14 +311,20 @@ fun InfoCursoScreenProfesor(
         }
     }
 
-    LaunchedEffect(cursoId) {
+    LaunchedEffect(cursoId, selectedMonth, selectedYear) {
         cargarDatosCurso()
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Gestión del Curso", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "Gestión del Curso",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.Default.ArrowBack, "Volver")
@@ -267,10 +332,33 @@ fun InfoCursoScreenProfesor(
                 },
                 actions = {
                     IconButton(onClick = { showEditDialog = true }) {
-                        Icon(Icons.Default.Edit, "Editar curso", tint = AzulCielo)
+                        Surface(
+                            shape = CircleShape,
+                            color = AzulCielo.copy(alpha = 0.15f),
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                "Editar",
+                                tint = AzulCielo,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
                     }
+                    Spacer(Modifier.width(4.dp))
                     IconButton(onClick = { showImagePicker = true }) {
-                        Icon(Icons.Default.Image, "Cambiar portada", tint = Fucsia)
+                        Surface(
+                            shape = CircleShape,
+                            color = Fucsia.copy(alpha = 0.15f),
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Image,
+                                "Portada",
+                                tint = Fucsia,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -284,92 +372,115 @@ fun InfoCursoScreenProfesor(
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
-                isLoading -> LoadingView()
+                isLoading -> ModernCursoLoadingView()
                 errorMessage != null -> ErrorView(
                     message = errorMessage ?: "",
                     onRetry = { scope.launch { cargarDatosCurso() } },
                     onBack = { navController.popBackStack() }
                 )
                 cursoDetalle != null -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        item { CursoHeader(cursoDetalle!!, modulos.size, cursoDetalle!!.participantesCount, calcularTotalTareas(modulos)) }
-                        item { QuickActions(cursoId, navController) }
-                        item {
-                            Spacer(Modifier.height(16.dp))
-                            AddTareaButton { navController.navigate("crearTarea/$cursoId") }
-                        }
-
-                        item {
-                            Spacer(Modifier.height(24.dp))
-                            SectionHeader(
-                                icon = Icons.Default.Forum,
-                                title = "Foros de Discusión",
-                                subtitle = "${foros.size} foros activos",
-                                color = Fucsia
-                            )
-                        }
-
-                        if (foros.isEmpty()) {
-                            item { EmptyForosView() }
-                        } else {
-                            items(foros) { foro ->
-                                ForoCard(
-                                    foro = foro,
-                                    onClick = { navController.navigate("foro_detalle/${foro.id}") }
-                                )
-                                Spacer(Modifier.height(12.dp))
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            item {
+                                EnhancedCursoHeaderView(cursoDetalle!!)
                             }
-                        }
 
-                        item {
-                            Spacer(Modifier.height(24.dp))
-                            SectionHeader(
-                                icon = Icons.Default.CalendarMonth,
-                                title = "Próximas Actividades",
-                                subtitle = "${proximosEventos.size} eventos programados",
-                                color = Naranja
-                            )
-                        }
-
-                        if (proximosEventos.isEmpty()) {
-                            item { EmptyEventosView() }
-                        } else {
-                            items(proximosEventos) { evento ->
-                                EventoCard(evento = evento)
-                                Spacer(Modifier.height(12.dp))
+                            item {
+                                ModernQuickActionsRow(cursoId, navController, modulos.size, proximosEventos.size)
                             }
-                        }
 
-                        item {
-                            Spacer(Modifier.height(24.dp))
-                            SectionHeader(
-                                icon = Icons.Default.Assignment,
-                                title = "Tareas del Curso",
-                                subtitle = "${calcularTotalTareas(modulos)} tareas en ${modulos.size} módulos",
-                                color = VerdeLima
-                            )
-                        }
+                            item {
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 20.dp, vertical = 8.dp)
+                                        .clickable { navController.navigate("calendarioProfesor/$cursoId") },
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = Color(0xFF9C27B0).copy(alpha = 0.1f),
+                                    border = BorderStroke(2.dp, Color(0xFF9C27B0).copy(alpha = 0.3f))
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(20.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = Color(0xFF9C27B0),
+                                                modifier = Modifier.size(48.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.CalendarMonth,
+                                                    null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.padding(12.dp)
+                                                )
+                                            }
 
-                        if (modulos.isEmpty() || modulos.all { it.tareas.isEmpty() }) {
-                            item { EmptyTareasView() }
-                        } else {
-                            items(modulos) { modulo ->
-                                ModuloSection(
-                                    modulo = modulo,
+                                            Column {
+                                                Text(
+                                                    "Ver Calendario Completo",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color(0xFF9C27B0)
+                                                )
+                                                Text(
+                                                    "Gestiona eventos y fechas importantes",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = GrisMedio
+                                                )
+                                            }
+                                        }
+
+                                        Icon(
+                                            Icons.Default.ArrowForward,
+                                            null,
+                                            tint = Color(0xFF9C27B0),
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            item {
+                                EnhancedTabsSectionView(
+                                    pagerState = pagerState,
+                                    modulos = modulos,
+                                    foros = foros,
+                                    eventos = proximosEventos,
+                                    eventosDelMes = eventosDelMes,
+                                    selectedMonth = selectedMonth,
+                                    selectedYear = selectedYear,
+                                    onMonthChange = { month, year ->
+                                        selectedMonth = month
+                                        selectedYear = year
+                                    },
                                     onTareaClick = { tareaId ->
                                         navController.navigate("detalleTareaProfesor/$tareaId")
+                                    },
+                                    onForoClick = { foroId ->
+                                        navController.navigate("foro_detalle/$foroId")
+                                    },
+                                    onVerCalendarioCompleto = {
+                                        navController.navigate("calendarioProfesor/$cursoId")
                                     }
                                 )
                             }
                         }
-
-                        item { Spacer(Modifier.height(24.dp)) }
                     }
                 }
             }
 
             if (showEditDialog && cursoDetalle != null) {
-                EditCursoDialog(
+                EditCursoDialogMejorado(
                     curso = cursoDetalle!!,
                     token = token,
                     onDismiss = { showEditDialog = false },
@@ -377,14 +488,14 @@ fun InfoCursoScreenProfesor(
                         showEditDialog = false
                         scope.launch {
                             cargarDatosCurso()
-                            snackbarHostState.showSnackbar("Curso actualizado")
+                            snackbarHostState.showSnackbar("✅ Curso actualizado")
                         }
                     }
                 )
             }
 
             if (showImagePicker && cursoDetalle != null) {
-                ImagePickerDialog(
+                ImagePickerDialogMejorado(
                     cursoId = cursoDetalle!!.id,
                     token = token,
                     onDismiss = { showImagePicker = false },
@@ -392,7 +503,7 @@ fun InfoCursoScreenProfesor(
                         showImagePicker = false
                         scope.launch {
                             cargarDatosCurso()
-                            snackbarHostState.showSnackbar("Portada actualizada")
+                            snackbarHostState.showSnackbar("✅ Portada actualizada")
                         }
                     }
                 )
@@ -401,83 +512,123 @@ fun InfoCursoScreenProfesor(
     }
 }
 
-// ==================== COMPONENTES REUTILIZABLES ====================
-
-data class ActionButton(
-    val icon: ImageVector,
-    val label: String,
-    val color: Color,
-    val route: String
-)
+// ==================== HEADER ====================
 
 @Composable
-fun CursoHeader(curso: CursoDetalleProfesor, modulosCount: Int, participantesCount: Int, tareasCount: Int) {
-    Column {
-        Box(modifier = Modifier.fillMaxWidth().height(280.dp)) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(listOf(Color(0xFF667EEA), Color(0xFF764BA2)))
+private fun EnhancedCursoHeaderView(curso: CursoDetalleProfesor) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = FondoCard,
+        shadowElevation = 8.dp
+    ) {
+        Column {
+            Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    Color(0xFF667EEA),
+                                    Color(0xFF764BA2),
+                                    Color(0xFFF093FB)
+                                )
+                            )
+                        )
                 )
-            )
 
-            if (curso.fotoPortadaUrl != null) {
-                AsyncImage(
-                    model = curso.fotoPortadaUrl,
-                    contentDescription = "Portada",
-                    modifier = Modifier.fillMaxSize().alpha(0.4f),
-                    contentScale = ContentScale.Crop
-                )
-            }
-
-            Box(
-                modifier = Modifier.fillMaxSize().background(
-                    Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color(0xFF667EEA).copy(alpha = 0.9f)),
-                        startY = 0f,
-                        endY = 900f
+                if (curso.fotoPortadaUrl != null) {
+                    AsyncImage(
+                        model = curso.fotoPortadaUrl,
+                        contentDescription = "Portada",
+                        modifier = Modifier.fillMaxSize().alpha(0.5f),
+                        contentScale = ContentScale.Crop
                     )
-                )
-            )
+                }
 
-            Column(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Badge(text = "Modo Profesor", icon = Icons.Default.School)
-                Text(
-                    text = curso.nombre,
-                    style = MaterialTheme.typography.headlineLarge.copy(fontSize = 32.sp),
-                    fontWeight = FontWeight.ExtraBold,
-                    color = Color.White
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.7f)
+                                )
+                            )
+                        )
                 )
+
+                Column(
+                    modifier = Modifier.fillMaxSize().padding(24.dp),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        ModernBadge(
+                            text = "Profesor",
+                            icon = Icons.Default.School,
+                            color = Color(0xFF4CAF50)
+                        )
+                        ModernBadge(
+                            text = "${curso.participantesCount} estudiantes",
+                            icon = Icons.Default.People,
+                            color = Color(0xFF2196F3)
+                        )
+                    }
+
+                    Text(
+                        text = curso.nombre,
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color.White,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = 28.sp,
+                        lineHeight = 32.sp
+                    )
+                }
             }
-        }
 
-        Surface(
-            modifier = Modifier.fillMaxWidth().offset(y = (-30).dp),
-            shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
-            color = FondoClaro,
-            shadowElevation = 8.dp
-        ) {
             Column(
-                modifier = Modifier.fillMaxWidth().padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     text = curso.descripcion,
-                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 16.sp, lineHeight = 24.sp),
-                    color = GrisMedio
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = GrisMedio,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 24.sp
                 )
 
-                HorizontalDivider(color = GrisClaro)
+                Divider(
+                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = GrisExtraClaro
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    StatsCard(Icons.Default.People, participantesCount.toString(), "Estudiantes", Fucsia)
-                    StatsCard(Icons.Default.Book, modulosCount.toString(), "Módulos", AzulCielo)
-                    StatsCard(Icons.Default.Assignment, tareasCount.toString(), "Tareas", VerdeLima)
+                    CursoStatItem(
+                        icon = Icons.Default.FolderOpen,
+                        value = "${curso.modulosCount}",
+                        label = "Módulos",
+                        color = Color(0xFFBA68C8)
+                    )
+                    CursoStatItem(
+                        icon = Icons.Default.People,
+                        value = "${curso.participantesCount}",
+                        label = "Estudiantes",
+                        color = AzulCielo
+                    )
+                    CursoStatItem(
+                        icon = Icons.Default.Assignment,
+                        value = "Activo",
+                        label = "Estado",
+                        color = VerdeLima
+                    )
                 }
             }
         }
@@ -485,231 +636,319 @@ fun CursoHeader(curso: CursoDetalleProfesor, modulosCount: Int, participantesCou
 }
 
 @Composable
-fun SectionHeader(icon: ImageVector, title: String, subtitle: String, color: Color) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = color.copy(alpha = 0.1f),
-        border = BorderStroke(2.dp, color.copy(alpha = 0.3f))
+private fun CursoStatItem(
+    icon: ImageVector,
+    value: String,
+    label: String,
+    color: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        Surface(
+            shape = CircleShape,
+            color = color.copy(alpha = 0.15f),
+            modifier = Modifier.size(48.dp)
         ) {
-            Surface(shape = CircleShape, color = color, modifier = Modifier.size(48.dp)) {
-                Icon(icon, null, modifier = Modifier.padding(12.dp), tint = Color.White)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = GrisOscuro
-                )
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = GrisMedio,
-                    fontSize = 14.sp
-                )
-            }
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.padding(12.dp)
+            )
         }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = GrisOscuro
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = GrisMedio
+        )
     }
 }
 
 @Composable
-fun Badge(text: String, icon: ImageVector) {
+private fun ModernBadge(text: String, icon: ImageVector, color: Color) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = Color.White.copy(alpha = 0.25f)
+        color = color.copy(alpha = 0.3f),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.5f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
-            Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(16.dp))
+            Text(text, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
     }
 }
 
-@Composable
-fun StatsCard(icon: ImageVector, value: String, label: String, color: Color) {
-    Surface(
-        modifier = Modifier.width(110.dp).height(110.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = FondoCard,
-        shadowElevation = 4.dp,
-        border = BorderStroke(1.dp, GrisClaro)
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Surface(
-                shape = CircleShape,
-                color = color.copy(alpha = 0.15f),
-                modifier = Modifier.size(44.dp)
-            ) {
-                Icon(icon, null, modifier = Modifier.padding(10.dp), tint = color)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = value,
-                style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp),
-                fontWeight = FontWeight.ExtraBold,
-                color = GrisOscuro
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                textAlign = TextAlign.Center,
-                color = GrisMedio,
-                fontWeight = FontWeight.Medium
-            )
-        }
-    }
-}
+// ==================== QUICK ACTIONS ====================
+
+private data class ProfesorActionButton(
+    val icon: ImageVector,
+    val label: String,
+    val color: Color,
+    val route: String,
+    val badge: String? = null
+)
 
 @Composable
-fun QuickActions(cursoId: String, navController: NavController) {
+private fun ModernQuickActionsRow(
+    cursoId: String,
+    navController: NavController,
+    modulosCount: Int,
+    eventosCount: Int
+) {
     val actions = listOf(
-        ActionButton(Icons.Default.PersonAdd, "Participantes", Color(0xFF667EEA), "participantesCurso/$cursoId"),
-        ActionButton(Icons.Default.Forum, "Crear Foro", Color(0xFFf093fb), "crearForo/$cursoId"),
-        ActionButton(Icons.Default.CalendarMonth, "Crear Evento", Color(0xFFf5576c), "crearEvento/$cursoId"),
-        ActionButton(Icons.Default.Assignment, "Nueva Tarea", Color(0xFF38ef7d), "crearTarea/$cursoId")
+        ProfesorActionButton(
+            Icons.Default.PersonAdd,
+            "Participantes",
+            Color(0xFF3F51B5),
+            "participantesCurso/$cursoId"
+        ),
+        ProfesorActionButton(
+            Icons.Default.FolderOpen,
+            "Módulos",
+            Color(0xFFBA68C8),
+            "modulosCurso/$cursoId",
+            badge = "$modulosCount"
+        ),
+        ProfesorActionButton(
+            Icons.Default.Add,
+            "Nuevo Módulo",
+            VerdeLima,
+            "crearModulo/$cursoId"
+        ),
+        ProfesorActionButton(
+            Icons.Default.Assignment,
+            "Nueva Tarea",
+            Naranja,
+            "crearTarea/$cursoId"
+        ),
+        ProfesorActionButton(
+            Icons.Default.Forum,
+            "Crear Foro",
+            Fucsia,
+            "crearForo/$cursoId"
+        ),
+        ProfesorActionButton(
+            Icons.Default.CalendarMonth,
+            "Nuevo Evento",
+            Color(0xFFF44336),
+            "crearEvento/$cursoId",
+            badge = if (eventosCount > 0) "$eventosCount" else null
+        )
     )
 
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(16.dp),
-        shape = RoundedCornerShape(24.dp),
-        color = FondoCard,
-        shadowElevation = 4.dp
+    LazyRow(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(
-                "Accesos Rápidos",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = GrisOscuro
-            )
-
-            actions.chunked(2).forEach { row ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    row.forEach { action ->
-                        ActionCard(
-                            modifier = Modifier.weight(1f),
-                            action = action,
-                            onClick = { navController.navigate(action.route) }
-                        )
-                    }
-                }
+        items(actions.size) { index ->
+            EnhancedActionCardView(actions[index]) {
+                navController.navigate(actions[index].route)
             }
         }
     }
 }
 
 @Composable
-fun ActionCard(
-    modifier: Modifier = Modifier,
-    action: ActionButton,
-    onClick: () -> Unit
-) {
+private fun EnhancedActionCardView(action: ProfesorActionButton, onClick: () -> Unit) {
     Surface(
-        modifier = modifier.height(100.dp).clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = action.color.copy(alpha = 0.1f),
-        border = BorderStroke(2.dp, action.color.copy(alpha = 0.3f))
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Surface(shape = CircleShape, color = action.color, modifier = Modifier.size(48.dp)) {
-                Icon(action.icon, null, modifier = Modifier.padding(12.dp), tint = Color.White)
-            }
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = action.label,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                color = action.color,
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-fun ForoCard(foro: ForoInfo, onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable(onClick = onClick),
+        modifier = Modifier
+            .width(120.dp)
+            .height(110.dp)
+            .clickable(onClick = onClick)
+            .shadow(4.dp, RoundedCornerShape(20.dp)),
         shape = RoundedCornerShape(20.dp),
-        color = FondoCard,
-        shadowElevation = 4.dp
+        color = FondoCard
     ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Box {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                action.color.copy(alpha = 0.08f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
+
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
+                Box {
                     Surface(
                         shape = CircleShape,
-                        color = Fucsia.copy(alpha = 0.15f),
+                        color = action.color,
                         modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
-                            Icons.Default.Forum,
+                            action.icon,
                             null,
                             modifier = Modifier.padding(12.dp),
-                            tint = Fucsia
+                            tint = Color.White
                         )
                     }
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = foro.titulo,
-                            style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
-                            fontWeight = FontWeight.Bold,
-                            color = GrisOscuro,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = "${foro.mensajesCount} mensajes",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = GrisMedio
-                        )
+                    action.badge?.let { badge ->
+                        Surface(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = 4.dp, y = (-4).dp),
+                            shape = CircleShape,
+                            color = Color(0xFFF44336),
+                            shadowElevation = 2.dp
+                        ) {
+                            Text(
+                                text = badge,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
 
-                Surface(shape = CircleShape, color = Fucsia, modifier = Modifier.size(36.dp)) {
-                    IconButton(onClick = onClick) {
-                        Icon(Icons.Default.ArrowForward, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.height(12.dp))
+
+                Text(
+                    text = action.label,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = action.color,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 14.sp
+                )
+            }
+        }
+    }
+}
+
+// ==================== TABS ====================
+
+private data class ProfesorTabItem(
+    val title: String,
+    val icon: ImageVector,
+    val color: Color
+)
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun EnhancedTabsSectionView(
+    pagerState: PagerState,
+    modulos: List<ModuloConTareas>,
+    foros: List<ForoInfo>,
+    eventos: List<EventoInfo>,
+    eventosDelMes: Map<Int, List<EventoInfo>>,
+    selectedMonth: Int,
+    selectedYear: Int,
+    onMonthChange: (Int, Int) -> Unit,
+    onTareaClick: (String) -> Unit,
+    onForoClick: (String) -> Unit,
+    onVerCalendarioCompleto: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    val tabs = listOf(
+        ProfesorTabItem("Tareas", Icons.Default.Assignment, VerdeLima),
+        ProfesorTabItem("Foros", Icons.Default.Forum, Fucsia),
+        ProfesorTabItem("Calendario", Icons.Default.CalendarToday, Color(0xFF9C27B0))
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(600.dp)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = FondoCard,
+            shadowElevation = 4.dp
+        ) {
+            ScrollableTabRow(
+                selectedTabIndex = pagerState.currentPage,
+                containerColor = Color.Transparent,
+                contentColor = GrisOscuro,
+                edgePadding = 0.dp,
+                indicator = { tabPositions ->
+                    if (tabPositions.isNotEmpty() && pagerState.currentPage < tabPositions.size) {
+                        TabRowDefaults.SecondaryIndicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
+                            height = 4.dp,
+                            color = tabs[pagerState.currentPage].color
+                        )
+                    }
+                },
+                divider = {}
+            ) {
+                tabs.forEachIndexed { index, tab ->
+                    Tab(
+                        selected = pagerState.currentPage == index,
+                        onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = if (pagerState.currentPage == index)
+                                    tab.color.copy(alpha = 0.15f)
+                                else
+                                    Color.Transparent
+                            ) {
+                                Icon(
+                                    tab.icon,
+                                    null,
+                                    tint = if (pagerState.currentPage == index) tab.color else GrisMedio,
+                                    modifier = Modifier.padding(8.dp).size(20.dp)
+                                )
+                            }
+
+                            Text(
+                                tab.title,
+                                fontWeight = if (pagerState.currentPage == index)
+                                    FontWeight.Bold
+                                else
+                                    FontWeight.Medium,
+                                color = if (pagerState.currentPage == index) tab.color else GrisMedio,
+                                fontSize = 15.sp
+                            )
+                        }
                     }
                 }
             }
+        }
 
-            if (foro.descripcion.isNotBlank()) {
-                Text(
-                    text = foro.descripcion,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = GrisMedio,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            when (page) {
+                0 -> TareasTabView(modulos, onTareaClick)
+                1 -> ForosTabView(foros, onForoClick)
+                2 -> CalendarioTabView(
+                    eventosDelMes = eventosDelMes,
+                    selectedMonth = selectedMonth,
+                    selectedYear = selectedYear,
+                    onMonthChange = onMonthChange,
+                    onVerCalendarioCompleto = onVerCalendarioCompleto
                 )
             }
         }
@@ -717,109 +956,23 @@ fun ForoCard(foro: ForoInfo, onClick: () -> Unit) {
 }
 
 @Composable
-fun EventoCard(evento: EventoInfo) {
-    val categoriaColor = when (evento.categoria) {
-        "examen" -> ErrorOscuro
-        "clase" -> AzulCielo
-        "entrega" -> Advertencia
-        else -> VerdeLima
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = FondoCard,
-        shadowElevation = 4.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+private fun TareasTabView(modulos: List<ModuloConTareas>, onTareaClick: (String) -> Unit) {
+    if (modulos.isEmpty() || modulos.all { it.tareas.isEmpty() }) {
+        EmptyStateView(
+            Icons.Default.Assignment,
+            "No hay tareas",
+            "Crea una tarea para empezar a gestionar las entregas",
+            VerdeLima
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = categoriaColor.copy(alpha = 0.15f),
-                modifier = Modifier.size(60.dp)
-            ) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = obtenerDiaEvento(evento.fecha),
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 24.sp),
-                        fontWeight = FontWeight.ExtraBold,
-                        color = categoriaColor
-                    )
-                    Text(
-                        text = obtenerMesEvento(evento.fecha),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = categoriaColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = evento.titulo,
-                        style = MaterialTheme.typography.titleMedium.copy(fontSize = 16.sp),
-                        fontWeight = FontWeight.Bold,
-                        color = GrisOscuro,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = categoriaColor.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = evento.categoria.uppercase(),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            fontWeight = FontWeight.Bold,
-                            color = categoriaColor
-                        )
-                    }
-                }
-
-                if (evento.descripcion.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = evento.descripcion,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GrisMedio,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-
-                if (evento.hora != null) {
-                    Spacer(Modifier.height(6.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.AccessTime,
-                            null,
-                            tint = AzulCielo,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = evento.hora,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = AzulCielo,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+            items(modulos.size) { index ->
+                if (modulos[index].tareas.isNotEmpty()) {
+                    ModuloEnhancedSectionView(modulos[index], onTareaClick)
                 }
             }
         }
@@ -827,297 +980,833 @@ fun EventoCard(evento: EventoInfo) {
 }
 
 @Composable
-fun AddTareaButton(onClick: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = VerdeLima,
-        shadowElevation = 6.dp
-    ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.Add, null, tint = Color.White, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(12.dp))
-            Text("Crear Nueva Tarea", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        }
-    }
-}
-
-@Composable
-fun ModuloSection(modulo: ModuloConTareas, onTareaClick: (String) -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
+private fun ModuloEnhancedSectionView(modulo: ModuloConTareas, onTareaClick: (String) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
             color = Color(0xFFF3E5F5),
-            border = BorderStroke(2.dp, Color(0xFFBA68C8))
+            border = BorderStroke(2.dp, Color(0xFFBA68C8)),
+            shadowElevation = 2.dp
         ) {
             Row(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Surface(shape = CircleShape, color = Color(0xFFBA68C8), modifier = Modifier.size(48.dp)) {
-                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.padding(12.dp), tint = Color.White)
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFFBA68C8),
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Icon(
+                        Icons.Default.FolderOpen,
+                        null,
+                        modifier = Modifier.padding(12.dp),
+                        tint = Color.White
+                    )
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         modulo.nombre,
-                        style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = GrisOscuro
                     )
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        "${modulo.tareas.size} tareas",
+                        "${modulo.tareas.size} tarea${if (modulo.tareas.size != 1) "s" else ""}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = GrisMedio,
-                        fontSize = 14.sp
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(12.dp))
+        modulo.tareas.forEach { tarea ->
+            EnhancedTareaCardView(tarea) { onTareaClick(tarea.id) }
+        }
+    }
+}
 
-        if (modulo.tareas.isEmpty()) {
-            ModuloVacioCard()
-        } else {
-            modulo.tareas.forEach { tarea ->
-                TareaCard(tarea = tarea, onClick = { onTareaClick(tarea.id) })
-                Spacer(Modifier.height(12.dp))
+@Composable
+private fun EnhancedTareaCardView(tarea: TareaInfo, onClick: () -> Unit) {
+    val (estadoColor, estadoFondo, estadoTexto, estadoIcon) = when {
+        tarea.estaVencida -> TareaEstado(ErrorOscuro, ErrorClaro, "VENCIDA", Icons.Default.Warning)
+        tarea.estado == "cerrada" -> TareaEstado(Advertencia, AdvertenciaClaro, "CERRADA", Icons.Default.Lock)
+        else -> TareaEstado(Exito, ExitoClaro, "ACTIVA", Icons.Default.CheckCircle)
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .shadow(3.dp, RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = FondoCard
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(estadoColor, estadoColor.copy(alpha = 0.5f))
+                        )
+                    )
+            )
+
+            Row(
+                modifier = Modifier.padding(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = estadoFondo,
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Assignment,
+                        null,
+                        modifier = Modifier.padding(14.dp),
+                        tint = estadoColor
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = tarea.titulo,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = GrisOscuro,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (tarea.estaVencida) ErrorClaro else GrisExtraClaro
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CalendarToday,
+                                    null,
+                                    tint = if (tarea.estaVencida) ErrorOscuro else GrisMedio,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    formatearFechaEntrega(tarea.fechaEntrega),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (tarea.estaVencida) ErrorOscuro else GrisMedio,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = estadoFondo
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    estadoIcon,
+                                    null,
+                                    tint = estadoColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = estadoTexto,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = estadoColor
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Icon(
+                    Icons.Default.ArrowForward,
+                    null,
+                    tint = estadoColor,
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
     }
 }
 
 @Composable
-fun ModuloVacioCard() {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = GrisExtraClaro
-    ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+private fun ForosTabView(foros: List<ForoInfo>, onForoClick: (String) -> Unit) {
+    if (foros.isEmpty()) {
+        EmptyStateView(
+            Icons.Default.Forum,
+            "No hay foros",
+            "Crea un foro para iniciar discusiones con tus estudiantes",
+            Fucsia
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(Icons.Default.Info, null, tint = GrisMedio)
-            Text("No hay tareas en este módulo", style = MaterialTheme.typography.bodyMedium, color = GrisMedio)
+            items(foros.size) { index ->
+                EnhancedForoCardView(foros[index]) { onForoClick(foros[index].id) }
+            }
         }
     }
 }
 
 @Composable
-fun TareaCard(tarea: TareaInfo, onClick: () -> Unit) {
-    val (estadoColor, estadoFondo, estadoTexto) = when {
-        tarea.estaVencida -> Triple(ErrorOscuro, ErrorClaro, "VENCIDA")
-        tarea.estado == "cerrada" -> Triple(Advertencia, AdvertenciaClaro, "CERRADA")
-        else -> Triple(Exito, ExitoClaro, "ACTIVA")
+private fun EnhancedForoCardView(foro: ForoInfo, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .shadow(3.dp, RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = FondoCard
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Fucsia, Fucsia.copy(alpha = 0.5f))
+                        )
+                    )
+            )
+
+            Row(
+                modifier = Modifier.padding(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Fucsia.copy(alpha = 0.15f),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Forum,
+                        null,
+                        modifier = Modifier.padding(14.dp),
+                        tint = Fucsia
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = foro.titulo,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = GrisOscuro,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = GrisExtraClaro
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.ChatBubble,
+                                    null,
+                                    tint = Fucsia,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    "${foro.mensajesCount} mensaje${if (foro.mensajesCount != 1) "s" else ""}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = GrisMedio,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        if (foro.fechaCreacion.isNotEmpty()) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = GrisExtraClaro
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.CalendarToday,
+                                        null,
+                                        tint = GrisMedio,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Text(
+                                        formatearFechaEntrega(foro.fechaCreacion),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = GrisMedio,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Icon(
+                    Icons.Default.ArrowForward,
+                    null,
+                    tint = Fucsia,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarioTabView(
+    eventosDelMes: Map<Int, List<EventoInfo>>,
+    selectedMonth: Int,
+    selectedYear: Int,
+    onMonthChange: (Int, Int) -> Unit,
+    onVerCalendarioCompleto: () -> Unit
+) {
+    Column(modifier = Modifier.fillMaxSize().background(FondoClaro)) {
+        CalendarioHeaderView(
+            selectedMonth = selectedMonth,
+            selectedYear = selectedYear,
+            onMonthChange = onMonthChange
+        )
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                CalendarioGridView(
+                    month = selectedMonth,
+                    year = selectedYear,
+                    eventosDelMes = eventosDelMes
+                )
+            }
+
+            item { Spacer(Modifier.height(8.dp)) }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Eventos del mes",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = GrisOscuro
+                    )
+
+                    TextButton(onClick = onVerCalendarioCompleto) {
+                        Text(
+                            "Ver completo",
+                            color = Color(0xFF9C27B0),
+                            fontWeight = FontWeight.Bold
+                        )
+                        Icon(
+                            Icons.Default.ArrowForward,
+                            null,
+                            tint = Color(0xFF9C27B0),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            val todosLosEventos = eventosDelMes.values.flatten().sortedBy { it.fecha }
+
+            if (todosLosEventos.isEmpty()) {
+                item {
+                    EmptyStateView(
+                        Icons.Default.CalendarMonth,
+                        "Sin eventos este mes",
+                        "No hay eventos programados para ${obtenerNombreMes(selectedMonth)} $selectedYear",
+                        Color(0xFF9C27B0)
+                    )
+                }
+            } else {
+                items(todosLosEventos.size) { index ->
+                    EnhancedEventoCardView(todosLosEventos[index])
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EnhancedEventoCardView(evento: EventoInfo) {
+    val categoriaColor = when (evento.categoria) {
+        "tarea" -> Color(0xFFFF9800)
+        "examen" -> Color(0xFFE53935)
+        "clase" -> Color(0xFF1E88E5)
+        "entrega" -> Color(0xFFFB8C00)
+        "reunion" -> Color(0xFF8E24AA)
+        "escuela_padres" -> Color(0xFF2196F3)
+        "institucional" -> Color(0xFF00BCD4)
+        else -> Color(0xFF43A047)
     }
 
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(3.dp, RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = FondoCard
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(categoriaColor, categoriaColor.copy(alpha = 0.5f))
+                        )
+                    )
+            )
+
+            Row(
+                modifier = Modifier.padding(20.dp),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = categoriaColor.copy(alpha = 0.15f),
+                    modifier = Modifier.size(70.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = obtenerDiaDeEvento(evento.fecha),
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = categoriaColor
+                        )
+                        Text(
+                            text = obtenerMesDeEvento(evento.fecha),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = categoriaColor,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = evento.titulo,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = GrisOscuro,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = categoriaColor.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = when(evento.categoria) {
+                                    "tarea" -> "TAREA"
+                                    "escuela_padres" -> "ESCUELA PADRES"
+                                    "institucional" -> "INSTITUCIONAL"
+                                    else -> evento.categoria.uppercase()
+                                },
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = categoriaColor
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+
+                    if (evento.hora != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = categoriaColor.copy(alpha = 0.1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.AccessTime,
+                                    null,
+                                    tint = categoriaColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = evento.hora,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = categoriaColor,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    if (evento.descripcion.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = evento.descripcion,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GrisMedio,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarioHeaderView(
+    selectedMonth: Int,
+    selectedYear: Int,
+    onMonthChange: (Int, Int) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
         color = FondoCard,
         shadowElevation = 4.dp
     ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = obtenerNombreMes(selectedMonth),
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF9C27B0)
+                )
+                Text(
+                    text = selectedYear.toString(),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = GrisMedio,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                IconButton(
+                    onClick = {
+                        val (newMonth, newYear) = if (selectedMonth == 1) {
+                            Pair(12, selectedYear - 1)
+                        } else {
+                            Pair(selectedMonth - 1, selectedYear)
+                        }
+                        onMonthChange(newMonth, newYear)
+                    }
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFF9C27B0).copy(alpha = 0.15f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            "Anterior",
+                            tint = Color(0xFF9C27B0),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+
+                IconButton(
+                    onClick = {
+                        val (newMonth, newYear) = if (selectedMonth == 12) {
+                            Pair(1, selectedYear + 1)
+                        } else {
+                            Pair(selectedMonth + 1, selectedYear)
+                        }
+                        onMonthChange(newMonth, newYear)
+                    }
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFF9C27B0).copy(alpha = 0.15f),
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowForward,
+                            "Siguiente",
+                            tint = Color(0xFF9C27B0),
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarioGridView(
+    month: Int,
+    year: Int,
+    eventosDelMes: Map<Int, List<EventoInfo>>
+) {
+    val calendar = Calendar.getInstance().apply {
+        set(Calendar.YEAR, year)
+        set(Calendar.MONTH, month - 1)
+        set(Calendar.DAY_OF_MONTH, 1)
+    }
+
+    val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+    val firstDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK) - 1
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = FondoCard,
+        shadowElevation = 2.dp
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                Text(
-                    text = tarea.titulo,
-                    modifier = Modifier.weight(1f).padding(end = 12.dp),
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 18.sp),
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = GrisOscuro
-                )
-
-                Surface(shape = RoundedCornerShape(12.dp), color = estadoFondo) {
+                listOf("D", "L", "M", "M", "J", "V", "S").forEach { day ->
                     Text(
-                        text = estadoTexto,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                        fontWeight = FontWeight.ExtraBold,
-                        color = estadoColor
+                        text = day,
+                        modifier = Modifier.weight(1f),
+                        textAlign = TextAlign.Center,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF9C27B0)
                     )
                 }
             }
 
+            Spacer(Modifier.height(12.dp))
+
+            var dayCounter = 1
+            val rows = ((daysInMonth + firstDayOfWeek) / 7.0).toInt() + 1
+
+            for (week in 0 until rows) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    for (dayOfWeek in 0 until 7) {
+                        val position = week * 7 + dayOfWeek
+
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .aspectRatio(1f)
+                                .padding(2.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (position >= firstDayOfWeek && dayCounter <= daysInMonth) {
+                                val hasEvents = eventosDelMes.containsKey(dayCounter)
+                                val eventCount = eventosDelMes[dayCounter]?.size ?: 0
+
+                                CalendarioDayCellView(
+                                    day = dayCounter,
+                                    hasEvents = hasEvents,
+                                    eventCount = eventCount
+                                )
+                                dayCounter++
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CalendarioDayCellView(
+    day: Int,
+    hasEvents: Boolean,
+    eventCount: Int
+) {
+    val isToday = remember {
+        val today = Calendar.getInstance()
+        today.get(Calendar.DAY_OF_MONTH) == day
+    }
+
+    Surface(
+        shape = CircleShape,
+        color = when {
+            isToday -> Color(0xFF9C27B0)
+            hasEvents -> Color(0xFF9C27B0).copy(alpha = 0.15f)
+            else -> Color.Transparent
+        },
+        modifier = Modifier.size(40.dp)
+    ) {
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = day.toString(),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (hasEvents || isToday) FontWeight.Bold else FontWeight.Normal,
+                    color = when {
+                        isToday -> Color.White
+                        hasEvents -> Color(0xFF9C27B0)
+                        else -> GrisOscuro
+                    }
+                )
+
+                if (hasEvents && !isToday) {
+                    Spacer(Modifier.height(2.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        repeat(minOf(eventCount, 3)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(4.dp)
+                                    .background(Color(0xFF9C27B0), CircleShape)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ==================== COMPONENTES AUXILIARES ====================
+
+@Composable
+private fun EmptyStateView(
+    icon: ImageVector,
+    title: String,
+    subtitle: String,
+    color: Color
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = color.copy(alpha = 0.15f),
+                modifier = Modifier.size(100.dp)
+            ) {
+                Icon(
+                    icon,
+                    null,
+                    modifier = Modifier.padding(24.dp),
+                    tint = color
+                )
+            }
+
             Text(
-                text = tarea.descripcion,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp, lineHeight = 22.sp),
-                color = GrisMedio,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                color = GrisOscuro,
+                textAlign = TextAlign.Center
             )
 
-            HorizontalDivider(color = GrisClaro)
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (tarea.estaVencida) ErrorClaro else AzulCieloMuyClaro,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.CalendarToday,
-                            null,
-                            modifier = Modifier.padding(10.dp),
-                            tint = if (tarea.estaVencida) ErrorOscuro else AzulCielo
-                        )
-                    }
-                    Column {
-                        Text(
-                            "Fecha límite",
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                            color = GrisMedio
-                        )
-                        Text(
-                            formatearFechaEntrega(tarea.fechaEntrega),
-                            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
-                            fontWeight = FontWeight.Bold,
-                            color = if (tarea.estaVencida) ErrorOscuro else GrisOscuro
-                        )
-                    }
-                }
-
-                Surface(shape = CircleShape, color = AzulCielo, modifier = Modifier.size(44.dp)) {
-                    IconButton(onClick = onClick) {
-                        Icon(Icons.Default.ArrowForward, null, tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
-                }
-            }
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodyLarge,
+                color = GrisMedio,
+                textAlign = TextAlign.Center,
+                lineHeight = 24.sp
+            )
         }
     }
 }
 
 @Composable
-fun EmptyForosView() {
-    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = FondoCard,
-            shadowElevation = 4.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Surface(shape = CircleShape, color = Fucsia.copy(alpha = 0.15f), modifier = Modifier.size(80.dp)) {
-                    Icon(Icons.Default.Forum, null, modifier = Modifier.padding(20.dp), tint = Fucsia)
-                }
-                Text(
-                    "No hay foros creados",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = GrisOscuro
-                )
-                Text(
-                    "Crea un foro para iniciar discusiones con tus estudiantes",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = GrisMedio,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun EmptyEventosView() {
-    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = FondoCard,
-            shadowElevation = 4.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Surface(shape = CircleShape, color = Naranja.copy(alpha = 0.15f), modifier = Modifier.size(80.dp)) {
-                    Icon(Icons.Default.CalendarMonth, null, modifier = Modifier.padding(20.dp), tint = Naranja)
-                }
-                Text(
-                    "No hay eventos próximos",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = GrisOscuro
-                )
-                Text(
-                    "Programa eventos y actividades para tu curso",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = GrisMedio,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun EmptyTareasView() {
-    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp), contentAlignment = Alignment.Center) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            color = FondoCard,
-            shadowElevation = 4.dp
-        ) {
-            Column(
-                modifier = Modifier.padding(40.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp)
-            ) {
-                Surface(shape = CircleShape, color = VerdeLima.copy(alpha = 0.15f), modifier = Modifier.size(100.dp)) {
-                    Icon(Icons.Default.Assignment, null, modifier = Modifier.padding(24.dp), tint = VerdeLima)
-                }
-                Text(
-                    "No hay tareas creadas",
-                    style = MaterialTheme.typography.headlineSmall.copy(fontSize = 22.sp),
-                    fontWeight = FontWeight.Bold,
-                    color = GrisOscuro
-                )
-                Text(
-                    "Comienza creando tu primera tarea para este curso",
-                    style = MaterialTheme.typography.bodyLarge.copy(fontSize = 15.sp, lineHeight = 22.sp),
-                    color = GrisMedio,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun LoadingView() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun ModernCursoLoadingView() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            CircularProgressIndicator(modifier = Modifier.size(64.dp), strokeWidth = 6.dp, color = Color(0xFF667EEA))
-            Text("Cargando curso...", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            CircularProgressIndicator(
+                modifier = Modifier.size(64.dp),
+                strokeWidth = 6.dp,
+                color = Color(0xFF667EEA)
+            )
+            Text(
+                "Cargando curso...",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = GrisOscuro
+            )
+            Text(
+                "Preparando información",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GrisMedio
+            )
         }
     }
 }
@@ -1125,21 +1814,45 @@ fun LoadingView() {
 // ==================== DIÁLOGOS ====================
 
 @Composable
-fun EditCursoDialog(curso: CursoDetalleProfesor, token: String, onDismiss: () -> Unit, onSuccess: () -> Unit) {
+private fun EditCursoDialogMejorado(
+    curso: CursoDetalleProfesor,
+    token: String,
+    onDismiss: () -> Unit,
+    onSuccess: () -> Unit
+) {
     var nombre by remember { mutableStateOf(curso.nombre) }
     var descripcion by remember { mutableStateOf(curso.descripcion) }
     var isUpdating by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(24.dp), color = FondoCard, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = FondoCard,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Editar Curso", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Column {
+                        Text(
+                            "Editar Curso",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = GrisOscuro
+                        )
+                        Text(
+                            "Actualiza la información del curso",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GrisMedio
+                        )
+                    }
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, "Cerrar", tint = GrisMedio)
                     }
@@ -1151,27 +1864,45 @@ fun EditCursoDialog(curso: CursoDetalleProfesor, token: String, onDismiss: () ->
                     label = { Text("Nombre del curso") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
+                    leadingIcon = {
+                        Icon(Icons.Default.School, null, tint = AzulCielo)
+                    },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = AzulCielo,
-                        focusedLabelColor = AzulCielo
-                    )
+                        focusedLabelColor = AzulCielo,
+                        focusedLeadingIconColor = AzulCielo
+                    ),
+                    shape = RoundedCornerShape(12.dp)
                 )
 
                 OutlinedTextField(
                     value = descripcion,
                     onValueChange = { descripcion = it },
                     label = { Text("Descripción") },
-                    modifier = Modifier.fillMaxWidth().height(120.dp),
-                    maxLines = 4,
+                    modifier = Modifier.fillMaxWidth().height(140.dp),
+                    maxLines = 5,
+                    leadingIcon = {
+                        Icon(Icons.Default.Description, null, tint = AzulCielo)
+                    },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = AzulCielo,
-                        focusedLabelColor = AzulCielo
-                    )
+                        focusedLabelColor = AzulCielo,
+                        focusedLeadingIconColor = AzulCielo
+                    ),
+                    shape = RoundedCornerShape(12.dp)
                 )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f), enabled = !isUpdating) {
-                        Text("Cancelar")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(50.dp),
+                        enabled = !isUpdating,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Cancelar", fontWeight = FontWeight.Bold)
                     }
 
                     Button(
@@ -1186,22 +1917,38 @@ fun EditCursoDialog(curso: CursoDetalleProfesor, token: String, onDismiss: () ->
                                         descripcion = descripcion,
                                         fotoPortadaFile = null
                                     )
-                                    if (response.isSuccessful) onSuccess()
+                                    if (response.isSuccessful) {
+                                        onSuccess()
+                                    }
                                 } catch (e: Exception) {
-                                    e.printStackTrace()
+                                    Log.e("EditCurso", "Error", e)
                                 } finally {
                                     isUpdating = false
                                 }
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(50.dp),
                         enabled = !isUpdating && nombre.isNotBlank() && descripcion.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = AzulCielo)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AzulCielo,
+                            disabledContainerColor = GrisExtraClaro
+                        ),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         if (isUpdating) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Color.White,
+                                strokeWidth = 3.dp
+                            )
                         } else {
-                            Text("Guardar")
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Save, null, modifier = Modifier.size(20.dp))
+                                Text("Guardar", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -1211,7 +1958,12 @@ fun EditCursoDialog(curso: CursoDetalleProfesor, token: String, onDismiss: () ->
 }
 
 @Composable
-fun ImagePickerDialog(cursoId: String, token: String, onDismiss: () -> Unit, onSuccess: () -> Unit) {
+private fun ImagePickerDialogMejorado(
+    cursoId: String,
+    token: String,
+    onDismiss: () -> Unit,
+    onSuccess: () -> Unit
+) {
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var isUploading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -1222,14 +1974,33 @@ fun ImagePickerDialog(cursoId: String, token: String, onDismiss: () -> Unit, onS
     ) { uri: Uri? -> selectedImageUri = uri }
 
     Dialog(onDismissRequest = onDismiss) {
-        Surface(shape = RoundedCornerShape(24.dp), color = FondoCard, modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = FondoCard,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Cambiar Portada", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Column {
+                        Text(
+                            "Cambiar Portada",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = GrisOscuro
+                        )
+                        Text(
+                            "Selecciona una nueva imagen",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GrisMedio
+                        )
+                    }
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, "Cerrar", tint = GrisMedio)
                     }
@@ -1237,44 +2008,103 @@ fun ImagePickerDialog(cursoId: String, token: String, onDismiss: () -> Unit, onS
 
                 if (selectedImageUri != null) {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().height(200.dp),
+                        modifier = Modifier.fillMaxWidth().height(220.dp),
                         shape = RoundedCornerShape(16.dp),
                         color = GrisExtraClaro
                     ) {
-                        AsyncImage(
-                            model = selectedImageUri,
-                            contentDescription = "Vista previa",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                        Box {
+                            AsyncImage(
+                                model = selectedImageUri,
+                                contentDescription = "Vista previa",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(12.dp),
+                                shape = CircleShape,
+                                color = Color.Black.copy(alpha = 0.6f)
+                            ) {
+                                IconButton(
+                                    onClick = { selectedImageUri = null },
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        "Eliminar",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 } else {
                     Surface(
-                        modifier = Modifier.fillMaxWidth().height(200.dp).clickable { imagePickerLauncher.launch("image/*") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(220.dp)
+                            .clickable { imagePickerLauncher.launch("image/*") },
                         shape = RoundedCornerShape(16.dp),
-                        color = GrisExtraClaro,
-                        border = BorderStroke(2.dp, AzulCielo.copy(alpha = 0.3f))
+                        color = Fucsia.copy(alpha = 0.08f),
+                        border = BorderStroke(2.dp, Fucsia.copy(alpha = 0.3f))
                     ) {
                         Column(
                             modifier = Modifier.fillMaxSize(),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            Icon(Icons.Default.CloudUpload, null, modifier = Modifier.size(64.dp), tint = AzulCielo.copy(alpha = 0.6f))
-                            Spacer(Modifier.height(12.dp))
-                            Text("Toca para seleccionar imagen", color = GrisMedio, fontWeight = FontWeight.Medium)
+                            Surface(
+                                shape = CircleShape,
+                                color = Fucsia.copy(alpha = 0.15f),
+                                modifier = Modifier.size(80.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.CloudUpload,
+                                    null,
+                                    modifier = Modifier.padding(20.dp),
+                                    tint = Fucsia
+                                )
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "Toca para seleccionar imagen",
+                                color = Fucsia,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                "JPG, PNG o WEBP",
+                                color = GrisMedio,
+                                fontSize = 13.sp
+                            )
                         }
                     }
                 }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     if (selectedImageUri != null) {
-                        OutlinedButton(onClick = { selectedImageUri = null }, modifier = Modifier.weight(1f), enabled = !isUploading) {
-                            Text("Cambiar")
+                        OutlinedButton(
+                            onClick = { selectedImageUri = null },
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            enabled = !isUploading,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Cambiar", fontWeight = FontWeight.Bold)
                         }
                     } else {
-                        OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f), enabled = !isUploading) {
-                            Text("Cancelar")
+                        OutlinedButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.weight(1f).height(50.dp),
+                            enabled = !isUploading,
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Cancelar", fontWeight = FontWeight.Bold)
                         }
                     }
 
@@ -1285,7 +2115,10 @@ fun ImagePickerDialog(cursoId: String, token: String, onDismiss: () -> Unit, onS
                                     isUploading = true
                                     try {
                                         val inputStream = context.contentResolver.openInputStream(uri)
-                                        val file = File(context.cacheDir, "portada_${System.currentTimeMillis()}.jpg")
+                                        val file = File(
+                                            context.cacheDir,
+                                            "portada_${System.currentTimeMillis()}.jpg"
+                                        )
                                         file.outputStream().use { inputStream?.copyTo(it) }
 
                                         val response = ApiService.updateCurso(
@@ -1299,21 +2132,35 @@ fun ImagePickerDialog(cursoId: String, token: String, onDismiss: () -> Unit, onS
                                         file.delete()
                                         if (response.isSuccessful) onSuccess()
                                     } catch (e: Exception) {
-                                        e.printStackTrace()
+                                        Log.e("ImagePicker", "Error", e)
                                     } finally {
                                         isUploading = false
                                     }
                                 }
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(50.dp),
                         enabled = !isUploading && selectedImageUri != null,
-                        colors = ButtonDefaults.buttonColors(containerColor = Fucsia)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Fucsia,
+                            disabledContainerColor = GrisExtraClaro
+                        ),
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         if (isUploading) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                color = Color.White,
+                                strokeWidth = 3.dp
+                            )
                         } else {
-                            Text("Subir")
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Upload, null, modifier = Modifier.size(20.dp))
+                                Text("Subir", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -1322,11 +2169,18 @@ fun ImagePickerDialog(cursoId: String, token: String, onDismiss: () -> Unit, onS
     }
 }
 
+// ==================== DATA CLASSES ====================
+
+private data class TareaEstado(
+    val color: Color,
+    val fondo: Color,
+    val texto: String,
+    val icon: ImageVector
+)
+
 // ==================== FUNCIONES AUXILIARES ====================
 
-fun calcularTotalTareas(modulos: List<ModuloConTareas>): Int = modulos.sumOf { it.tareas.size }
-
-fun obtenerDiaEvento(fecha: String): String {
+private fun obtenerDiaDeEvento(fecha: String): String {
     return try {
         fecha.split("-").getOrNull(2)?.take(2) ?: "?"
     } catch (e: Exception) {
@@ -1334,7 +2188,15 @@ fun obtenerDiaEvento(fecha: String): String {
     }
 }
 
-fun obtenerMesEvento(fecha: String): String {
+private fun obtenerDiaNumero(fecha: String): Int {
+    return try {
+        fecha.split("-").getOrNull(2)?.take(2)?.toIntOrNull() ?: 0
+    } catch (e: Exception) {
+        0
+    }
+}
+
+private fun obtenerMesDeEvento(fecha: String): String {
     return try {
         val mes = fecha.split("-").getOrNull(1)?.toIntOrNull() ?: return "?"
         val meses = listOf("", "ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC")
@@ -1342,4 +2204,12 @@ fun obtenerMesEvento(fecha: String): String {
     } catch (e: Exception) {
         "?"
     }
+}
+
+private fun obtenerNombreMes(mes: Int): String {
+    val meses = listOf(
+        "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+        "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+    )
+    return meses.getOrNull(mes) ?: "Mes $mes"
 }

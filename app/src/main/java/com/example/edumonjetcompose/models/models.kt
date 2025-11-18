@@ -1,6 +1,7 @@
 package com.example.edumonjetcompose.models
 
 import android.net.Uri
+import com.google.gson.annotations.SerializedName
 
 /**
  * ==========================================================
@@ -272,4 +273,36 @@ data class EventoInfo(
     val fecha: String,
     val hora: String?,
     val categoria: String
+)
+
+data class Notificacion(
+    val id: String,
+    val usuarioId: String,
+    val titulo: String,
+    val mensaje: String,
+    val tipo: String, // "info", "curso", "tarea", "mensaje", "sistema"
+    val leido: Boolean = false,
+    val fecha: String,
+    val referenciaId: String? = null,
+    val referenciaModelo: String? = null
+)
+
+data class NotificacionResponse(
+    val notificaciones: List<Notificacion>,
+    val pagination: Pagination,
+    val noLeidas: Int
+)
+
+data class Pagination(
+    val total: Int,
+    val page: Int,
+    val limit: Int,
+    val pages: Int
+)
+data class FcmTokenResponse(
+    @SerializedName("message")
+    val message: String,
+
+    @SerializedName("fcmToken")
+    val fcmToken: String
 )

@@ -1,17 +1,20 @@
-package com.example.edumonjetcompose
+package com.example.edumonjetcompose.ui.screens
 
 import android.util.Log
-import androidx.compose.foundation.*
+import android.widget.Toast
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -20,7 +23,11 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import com.example.edumonjetcompose.network.ApiService
 import com.example.edumonjetcompose.ui.*
+import com.google.gson.JsonObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,426 +38,302 @@ fun CrearModuloScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val snackbarHostState = remember { SnackbarHostState() }
 
     var titulo by remember { mutableStateOf("") }
     var descripcion by remember { mutableStateOf("") }
-    var orden by remember { mutableStateOf("") }
-    var isCreating by remember { mutableStateOf(false) }
-
-    // Estado para la información del curso
-    var cursoNombre by remember { mutableStateOf<String?>(null) }
-    var docenteNombre by remember { mutableStateOf<String?>(null) }
-    var isLoadingCurso by remember { mutableStateOf(true) }
-
-    // ✅ Log de credenciales recibidas y cargar curso
-    LaunchedEffect(Unit) {
-        Log.d("CrearModulo", "📋 Credenciales recibidas:")
-        Log.d("CrearModulo", "  - Token: ${if (token.isEmpty()) "VACÍO" else "OK (${token.length} chars)"}")
-        Log.d("CrearModulo", "  - CursoId: $cursoId")
-
-        // Cargar información del curso
-        try {
-            Log.d("CrearModulo", "📖 Cargando información del curso...")
-            val response = ApiService.getCursoById(token, cursoId)
-
-            if (response.isSuccessful) {
-                val jsonResponse = response.body()
-                val cursoJson = jsonResponse?.getAsJsonObject("curso")
-
-                cursoJson?.let { curso ->
-                    cursoNombre = curso.get("nombre")?.asString
-
-                    val docente = curso.getAsJsonObject("docenteId")
-                    if (docente != null) {
-                        val nombre = docente.get("nombre")?.asString ?: ""
-                        val apellido = docente.get("apellido")?.asString ?: ""
-                        docenteNombre = "$nombre $apellido"
-                    }
-
-                    Log.d("CrearModulo", "✅ Curso cargado: $cursoNombre")
-                    Log.d("CrearModulo", "   Docente: $docenteNombre")
-                }
-            } else {
-                Log.e("CrearModulo", "❌ Error al cargar curso: ${response.code()}")
-            }
-        } catch (e: Exception) {
-            Log.e("CrearModulo", "❌ Excepción al cargar curso", e)
-        } finally {
-            isLoadingCurso = false
-        }
-    }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Crear Nuevo Módulo", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        "Crear Módulo",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, "Volver")
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = "Volver",
+                            tint = Color.White
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = FondoCard,
-                    titleContentColor = GrisOscuro
+                    containerColor = AzulCielo
                 )
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = FondoClaro
-    ) { padding ->
-        LazyColumn(
+        }
+    ) { paddingValues ->
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(paddingValues)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(FondoClaro, Color.White)
+                    )
+                )
         ) {
-            item { Spacer(Modifier.height(8.dp)) }
-
-            // Información del curso
-            if (isLoadingCurso) {
-                item {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(32.dp),
-                            color = AzulCielo
-                        )
-                    }
-                }
-            } else if (cursoNombre != null) {
-                item {
-                    Surface(
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                // Mensaje de error si existe
+                errorMessage?.let { message ->
+                    Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        color = AzulCielo.copy(alpha = 0.1f),
-                        border = BorderStroke(1.dp, AzulCielo.copy(alpha = 0.3f))
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Surface(
-                                shape = CircleShape,
-                                color = AzulCielo.copy(alpha = 0.2f)
-                            ) {
-                                Icon(
-                                    Icons.Default.School,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .padding(12.dp)
-                                        .size(24.dp),
-                                    tint = AzulCielo
-                                )
-                            }
-                            Column(
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    "Curso",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = GrisMedio
-                                )
-                                Text(
-                                    cursoNombre!!,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AzulCielo
-                                )
-                                if (docenteNombre != null) {
-                                    Text(
-                                        "Docente: $docenteNombre",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = GrisMedio
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Header informativo
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    color = Fucsia.copy(alpha = 0.1f),
-                    border = BorderStroke(1.dp, Fucsia.copy(alpha = 0.3f))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Fucsia.copy(alpha = 0.2f)
-                        ) {
-                            Icon(
-                                Icons.Default.LibraryBooks,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .padding(12.dp)
-                                    .size(24.dp),
-                                tint = Fucsia
-                            )
-                        }
-                        Column(
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                "Nuevo módulo de aprendizaje",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Fucsia
-                            )
-                            Text(
-                                "Organiza el contenido del curso en módulos temáticos",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = GrisMedio
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Título del módulo
-            item {
-                OutlinedTextField(
-                    value = titulo,
-                    onValueChange = { titulo = it },
-                    label = { Text("Título del módulo") },
-                    placeholder = { Text("Ej: Introducción a las bases de datos") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    leadingIcon = {
-                        Icon(Icons.Default.Title, null, tint = Fucsia)
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Fucsia,
-                        focusedLabelColor = Fucsia,
-                        cursorColor = Fucsia
-                    )
-                )
-            }
-
-            // Descripción del módulo
-            item {
-                OutlinedTextField(
-                    value = descripcion,
-                    onValueChange = { descripcion = it },
-                    label = { Text("Descripción (opcional)") },
-                    placeholder = { Text("Describe los temas que se cubrirán en este módulo...") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp),
-                    maxLines = 8,
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Description,
-                            contentDescription = null,
-                            tint = Fucsia,
-                            modifier = Modifier
-                                .padding(top = 8.dp, start = 4.dp)
-                                .size(24.dp)
-                        )
-                    },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Fucsia,
-                        focusedLabelColor = Fucsia,
-                        cursorColor = Fucsia
-                    )
-                )
-            }
-
-            // Orden del módulo
-            item {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(
-                        "Orden (opcional)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = GrisOscuro
-                    )
-                    Text(
-                        "Define la posición de este módulo en el curso",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GrisMedio
-                    )
-
-                    OutlinedTextField(
-                        value = orden,
-                        onValueChange = {
-                            // Solo permitir números
-                            if (it.isEmpty() || it.all { char -> char.isDigit() }) {
-                                orden = it
-                            }
-                        },
-                        label = { Text("Número de orden") },
-                        placeholder = { Text("1, 2, 3...") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        leadingIcon = {
-                            Icon(Icons.Default.Numbers, null, tint = AzulCielo)
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AzulCielo,
-                            focusedLabelColor = AzulCielo,
-                            cursorColor = AzulCielo
-                        )
-                    )
-                }
-            }
-
-            // Botones de acción
-            item {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            Log.d("CrearModulo", "🔵 Botón Crear presionado")
-                            Log.d("CrearModulo", "📝 Datos - Título: '$titulo', Descripción: '${descripcion.take(50)}...'")
-
-                            // Validaciones
-                            if (titulo.isBlank()) {
-                                Log.w("CrearModulo", "❌ Validación: título vacío")
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("El título es obligatorio")
-                                }
-                                return@Button
-                            }
-                            if (titulo.length < 3) {
-                                Log.w("CrearModulo", "❌ Validación: título muy corto (${titulo.length} chars)")
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("El título debe tener al menos 3 caracteres")
-                                }
-                                return@Button
-                            }
-                            if (titulo.length > 200) {
-                                Log.w("CrearModulo", "❌ Validación: título muy largo (${titulo.length} chars)")
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("El título no puede exceder 200 caracteres")
-                                }
-                                return@Button
-                            }
-                            if (descripcion.length > 1000) {
-                                Log.w("CrearModulo", "❌ Validación: descripción muy larga (${descripcion.length} chars)")
-                                scope.launch {
-                                    snackbarHostState.showSnackbar("La descripción no puede exceder 1000 caracteres")
-                                }
-                                return@Button
-                            }
-
-                            Log.d("CrearModulo", "✅ Validaciones OK, iniciando creación...")
-                            Log.d("CrearModulo", "📊 Parámetros:")
-                            Log.d("CrearModulo", "  - CursoId: $cursoId")
-                            Log.d("CrearModulo", "  - Token: ${token.take(20)}...")
-                            Log.d("CrearModulo", "  - Orden: ${orden.ifEmpty { "null" }}")
-
-                            scope.launch {
-                                isCreating = true
-                                try {
-                                    Log.d("CrearModulo", "📤 Enviando petición al servidor...")
-
-                                    // Llamar a la API
-                                    val response = ApiService.createModulo(
-                                        token = token,
-                                        cursoId = cursoId,
-                                        nombre = titulo,
-                                        descripcion = descripcion.ifBlank { null },
-                                        orden = orden.toIntOrNull()
-                                    )
-
-                                    Log.d("CrearModulo", "📥 Respuesta recibida: ${response.code()}")
-
-                                    if (response.isSuccessful) {
-                                        val responseBody = response.body()
-                                        Log.d("CrearModulo", "✅ Módulo creado exitosamente")
-                                        Log.d("CrearModulo", "📄 Respuesta: $responseBody")
-                                        snackbarHostState.showSnackbar("Módulo creado exitosamente")
-                                        navController.popBackStack()
-                                    } else {
-                                        val errorBody = response.errorBody()?.string()
-                                        Log.e("CrearModulo", "❌ Error del servidor:")
-                                        Log.e("CrearModulo", "  - Código: ${response.code()}")
-                                        Log.e("CrearModulo", "  - Mensaje: ${response.message()}")
-                                        Log.e("CrearModulo", "  - Body: $errorBody")
-                                        snackbarHostState.showSnackbar(
-                                            errorBody?.let { "Error: $it" } ?: "Error al crear el módulo (${response.code()})"
-                                        )
-                                    }
-                                } catch (e: Exception) {
-                                    Log.e("CrearModulo", "❌ Excepción al crear módulo", e)
-                                    e.printStackTrace()
-                                    snackbarHostState.showSnackbar("Error: ${e.message ?: "Error desconocido"}")
-                                } finally {
-                                    isCreating = false
-                                    Log.d("CrearModulo", "🏁 Proceso finalizado")
-                                }
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        enabled = !isCreating,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Fucsia
+                        colors = CardDefaults.cardColors(
+                            containerColor = ErrorClaro.copy(alpha = 0.1f)
                         ),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        if (isCreating) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = Color.White,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Icon(Icons.Default.Check, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "Crear Módulo",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            Log.d("CrearModulo", "❌ Creación cancelada por el usuario")
-                            navController.popBackStack()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        enabled = !isCreating,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(2.dp, GrisMedio)
-                    ) {
-                        Icon(Icons.Default.Close, null, tint = GrisMedio)
-                        Spacer(Modifier.width(8.dp))
                         Text(
-                            "Cancelar",
+                            text = message,
+                            color = ErrorOscuro,
+                            modifier = Modifier.padding(16.dp),
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+
+                // Campo: Título
+                OutlinedTextField(
+                    value = titulo,
+                    onValueChange = {
+                        titulo = it
+                        errorMessage = null
+                    },
+                    label = { Text("Título del módulo *") },
+                    placeholder = { Text("Ej: Módulo 1 - Introducción") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isLoading,
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AzulCielo,
+                        focusedLabelColor = AzulCielo,
+                        cursorColor = AzulCielo
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                // Campo: Descripción
+                OutlinedTextField(
+                    value = descripcion,
+                    onValueChange = {
+                        descripcion = it
+                        errorMessage = null
+                    },
+                    label = { Text("Descripción") },
+                    placeholder = { Text("Describe el contenido del módulo...") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(150.dp),
+                    enabled = !isLoading,
+                    maxLines = 6,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = AzulCielo,
+                        focusedLabelColor = AzulCielo,
+                        cursorColor = AzulCielo
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Botón Crear
+                Button(
+                    onClick = {
+                        Log.d("CrearModulo", "🔵 Botón Crear presionado")
+                        Log.d("CrearModulo", "📝 Datos - Título: '$titulo', Descripción: '${descripcion.take(20)}...'")
+
+                        when {
+                            titulo.isBlank() -> {
+                                Log.w("CrearModulo", "⚠️ Validación fallida: título vacío")
+                                errorMessage = "El título es obligatorio"
+                            }
+                            titulo.length < 3 -> {
+                                Log.w("CrearModulo", "⚠️ Validación fallida: título muy corto")
+                                errorMessage = "El título debe tener al menos 3 caracteres"
+                            }
+                            titulo.length > 200 -> {
+                                Log.w("CrearModulo", "⚠️ Validación fallida: título muy largo")
+                                errorMessage = "El título no puede exceder 200 caracteres"
+                            }
+                            descripcion.length > 1000 -> {
+                                Log.w("CrearModulo", "⚠️ Validación fallida: descripción muy larga")
+                                errorMessage = "La descripción no puede exceder 1000 caracteres"
+                            }
+                            else -> {
+                                Log.d("CrearModulo", "✅ Validaciones OK, iniciando creación...")
+                                errorMessage = null
+                                isLoading = true
+
+                                scope.launch {
+                                    try {
+                                        Log.d("CrearModulo", "📊 Parámetros:")
+                                        Log.d("CrearModulo", "  - CursoId: $cursoId")
+                                        Log.d("CrearModulo", "  - Token: ${token.take(20)}...")
+                                        Log.d("CrearModulo", "  - Orden: null")
+
+                                        Log.d("CrearModulo", "📤 Enviando petición al servidor...")
+
+                                        val response = withContext(Dispatchers.IO) {
+                                            ApiService.createModulo(
+                                                token = token,
+                                                cursoId = cursoId,
+                                                titulo = titulo.trim(),
+                                                descripcion = descripcion.trim().takeIf { it.isNotBlank() },
+                                                orden = null
+                                            )
+                                        }
+
+                                        Log.d("CrearModulo", "📥 Respuesta recibida: ${response.code()}")
+
+                                        withContext(Dispatchers.Main) {
+                                            isLoading = false
+
+                                            if (response.isSuccessful) {
+                                                val body = response.body()
+                                                Log.d("CrearModulo", "✅ Módulo creado exitosamente")
+                                                Log.d("CrearModulo", "Response body: $body")
+
+                                                Toast.makeText(
+                                                    context,
+                                                    "Módulo creado exitosamente",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+
+                                                delay(300)
+                                                navController.popBackStack()
+                                            } else {
+                                                val errorBody = response.errorBody()?.string()
+                                                Log.e("CrearModulo", "❌ Error del servidor:")
+                                                Log.e("CrearModulo", "  - Código: ${response.code()}")
+                                                Log.e("CrearModulo", "  - Mensaje: ${response.message()}")
+                                                Log.e("CrearModulo", "  - Body: $errorBody")
+
+                                                errorMessage = when (response.code()) {
+                                                    400 -> "Datos inválidos. Verifica el título."
+                                                    401 -> "Sesión expirada. Inicia sesión nuevamente."
+                                                    403 -> "No tienes permisos para crear módulos."
+                                                    404 -> "Curso no encontrado."
+                                                    else -> "Error al crear módulo (${response.code()})"
+                                                }
+
+                                                Toast.makeText(
+                                                    context,
+                                                    errorMessage,
+                                                    Toast.LENGTH_LONG
+                                                ).show()
+                                            }
+                                        }
+
+                                    } catch (e: Exception) {
+                                        Log.e("CrearModulo", "❌ Excepción capturada", e)
+                                        withContext(Dispatchers.Main) {
+                                            isLoading = false
+                                            errorMessage = "Error de conexión: ${e.localizedMessage}"
+                                            Toast.makeText(
+                                                context,
+                                                "Error de conexión",
+                                                Toast.LENGTH_LONG
+                                            ).show()
+                                        }
+                                    } finally {
+                                        Log.d("CrearModulo", "🏁 Proceso finalizado")
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    enabled = !isLoading,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AzulCielo,
+                        disabledContainerColor = AzulCielo.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = Color.White,
+                            strokeWidth = 3.dp
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            "Creando...",
                             fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else {
+                        Icon(
+                            Icons.Default.Save,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            "Crear Módulo",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Nota informativa
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = AzulCielo.copy(alpha = 0.1f)
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "📌 Información",
                             fontWeight = FontWeight.Bold,
-                            color = GrisMedio
+                            fontSize = 14.sp,
+                            color = AzulCielo
+                        )
+                        Text(
+                            "• El título debe tener entre 3 y 200 caracteres",
+                            fontSize = 13.sp,
+                            color = TextoGris
+                        )
+                        Text(
+                            "• La descripción es opcional (máx. 1000 caracteres)",
+                            fontSize = 13.sp,
+                            color = TextoGris
+                        )
+                        Text(
+                            "• Los módulos organizan el contenido del curso",
+                            fontSize = 13.sp,
+                            color = TextoGris
                         )
                     }
                 }
             }
-
-            item { Spacer(Modifier.height(16.dp)) }
         }
     }
 }
+
+// Colores (asegúrate de tenerlos definidos en tu tema)
+val AzulCielo = Color(0xFF00B9F0)
+val FondoClaro = Color(0xFFF8F9FA)
+val ErrorClaro = Color(0xFFFFEBEE)
+val ErrorOscuro = Color(0xFFD32F2F)
+val TextoGris = Color(0xFF757575)

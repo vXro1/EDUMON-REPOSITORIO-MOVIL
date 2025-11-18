@@ -4,6 +4,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,7 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusDirection
@@ -26,7 +26,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +49,44 @@ fun LoginScreen(
     navController: NavController,
     onLoginSuccess: (String, UserData) -> Unit
 ) {
+    // 🔒 FORZAR MODO CLARO
+    val isDarkTheme = isSystemInDarkTheme()
+    if (isDarkTheme) {
+        // Mostrar advertencia si está en modo oscuro
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.LightMode,
+                    contentDescription = "Modo claro",
+                    tint = AzulCielo,
+                    modifier = Modifier.size(64.dp)
+                )
+                Text(
+                    text = "EDUMON requiere modo claro",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = FondoOscuroPrimario
+                )
+                Text(
+                    text = "Por favor, activa el modo claro en la configuración de tu dispositivo",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GrisNeutral,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
+            }
+        }
+        return
+    }
+
     var telefono by remember { mutableStateOf("") }
     var contraseña by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -99,14 +136,6 @@ fun LoginScreen(
             animation = tween(3800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ), label = "b4"
-    )
-
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(20000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ), label = "rotate"
     )
 
     val scale by infiniteTransition.animateFloat(
@@ -499,27 +528,22 @@ fun LoginScreen(
                                     val telefonoLimpio = telefono.trim()
 
                                     Log.d("LoginScreen", "🔐 Iniciando login")
-                                    Log.d("LoginScreen", "Teléfono original: $telefono")
-                                    Log.d("LoginScreen", "Teléfono limpio: $telefonoLimpio")
+                                    Log.d("LoginScreen", "Teléfono: $telefonoLimpio")
 
                                     val response = ApiService.login(telefonoLimpio, contraseña)
 
                                     if (response.isSuccessful) {
                                         val body = response.body()
-                                        Log.d("LoginScreen", "✅ Respuesta exitosa del servidor")
-                                        Log.d("LoginScreen", "Body completo: $body")
+                                        Log.d("LoginScreen", "✅ Respuesta exitosa")
 
                                         val token = body?.get("token")?.asString
                                         val userObject = body?.getAsJsonObject("user")
                                         val primerInicioSesion = body?.get("primerInicioSesion")?.asBoolean ?: false
 
-                                        Log.d("LoginScreen", "Token: $token")
-                                        Log.d("LoginScreen", "User Object: $userObject")
-                                        Log.d("LoginScreen", "Primer inicio: $primerInicioSesion")
+                                        Log.d("LoginScreen", "📦 primerInicioSesion: $primerInicioSesion")
 
                                         if (!token.isNullOrEmpty() && userObject != null) {
                                             val rol = userObject.get("rol")?.asString ?: ""
-                                            Log.d("LoginScreen", "Rol del usuario: $rol")
 
                                             val userData = UserData(
                                                 id = userObject.get("id")?.asString ?: userObject.get("_id")?.asString ?: "",
@@ -533,41 +557,21 @@ fun LoginScreen(
                                                 estado = userObject.get("estado")?.asString ?: "activo"
                                             )
 
-                                            Log.d("LoginScreen", "UserData creado: $userData")
+                                            Log.d("LoginScreen", "👤 UserData creado: ${userData.nombre}")
 
+                                            // Llamar a onLoginSuccess PRIMERO
                                             onLoginSuccess(token, userData)
-                                            Log.d("LoginScreen", "✅ Datos guardados exitosamente")
 
-                                            when (rol.lowercase()) {
-                                                "profesor", "docente" -> {
-                                                    if (primerInicioSesion) {
-                                                        Log.d("LoginScreen", "📍 Navegando a avatar_selection")
-                                                        navController.navigate("avatar_selection/$token/${userData.fotoPerfilUrl ?: "null"}") {
-                                                            popUpTo("login") { inclusive = true }
-                                                        }
-                                                    } else {
-                                                        Log.d("LoginScreen", "📍 Navegando a profesor_screen")
-                                                        navController.navigate("profesor_screen") {
-                                                            popUpTo("login") { inclusive = true }
-                                                        }
-                                                    }
+                                            // LUEGO navegar basándose en primerInicioSesion
+                                            if (primerInicioSesion) {
+                                                Log.d("LoginScreen", "🎨 Primer inicio detectado → Navegando a avatar_selection")
+                                                navController.navigate("avatar_selection/$token/${userData.fotoPerfilUrl ?: "null"}") {
+                                                    popUpTo("login") { inclusive = true }
                                                 }
-                                                "padre" -> {
-                                                    if (primerInicioSesion) {
-                                                        Log.d("LoginScreen", "📍 Navegando a avatar_selection (padre)")
-                                                        navController.navigate("avatar_selection/$token/${userData.fotoPerfilUrl ?: "null"}") {
-                                                            popUpTo("login") { inclusive = true }
-                                                        }
-                                                    } else {
-                                                        Log.d("LoginScreen", "📍 Navegando a padre_screen")
-                                                        navController.navigate("padre_screen") {
-                                                            popUpTo("login") { inclusive = true }
-                                                        }
-                                                    }
-                                                }
-                                                else -> {
-                                                    errorMessage = "Rol no autorizado: $rol"
-                                                    Log.e("LoginScreen", "❌ Rol no reconocido: $rol")
+                                            } else {
+                                                Log.d("LoginScreen", "🏠 Usuario recurrente → Navegando a home")
+                                                navController.navigate("home") {
+                                                    popUpTo("login") { inclusive = true }
                                                 }
                                             }
                                         } else {

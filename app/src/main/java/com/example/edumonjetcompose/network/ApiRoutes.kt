@@ -1,5 +1,6 @@
 package com.example.edumonjetcompose.network
 
+import com.example.edumonjetcompose.models.FcmTokenResponse
 import com.google.gson.JsonObject
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -26,8 +27,17 @@ interface ApiRoutes {
 
     @POST("auth/logout")
     suspend fun logout(@Header("Authorization") auth: String): Response<JsonObject>
+    /**
+     * Actualiza el token FCM del usuario autenticado
+     */
+    @PUT("usuarios/me/fcm-token")
+    suspend fun actualizarFcmToken(
+        @Header("Authorization") token: String,
+        @Body body: Map<String, String>
+    ): Response<FcmTokenResponse>
 
-    // ==================== USUARIOS ====================
+
+// ==================== USUARIOS ====================
     @POST("users")
     suspend fun createUser(
         @Header("Authorization") auth: String,
@@ -349,57 +359,47 @@ interface ApiRoutes {
     ): Response<JsonObject>
 
     // ==================== NOTIFICACIONES ====================
-    @POST("notificaciones")
-    suspend fun createNotificacion(
-        @Header("Authorization") auth: String,
-        @Body body: JsonObject
-    ): Response<JsonObject>
 
     @GET("notificaciones")
     suspend fun getMisNotificaciones(
-        @Header("Authorization") auth: String,
-        @Query("page") page: Int = 1,
-        @Query("limit") limit: Int = 10,
-        @Query("leida") leida: Boolean?
+        @Header("Authorization") token: String,
+        @Query("page") page: Int,
+        @Query("limit") limit: Int,
+        @Query("leido") leido: Boolean? // ✅ Retrofit maneja null automáticamente
     ): Response<JsonObject>
 
-    @GET("notificaciones/conteo-no-leidas")
+    @GET("notificaciones/no-leidas")
     suspend fun getConteoNoLeidas(
-        @Header("Authorization") auth: String
+        @Header("Authorization") token: String
     ): Response<JsonObject>
 
     @GET("notificaciones/{id}")
     suspend fun getNotificacionById(
-        @Header("Authorization") auth: String,
-        @Path("id") id: String
+        @Header("Authorization") token: String,
+        @Path("id") notificacionId: String
     ): Response<JsonObject>
 
-    @PATCH("notificaciones/{id}/leer")
+    @PUT("notificaciones/{id}/leer")
     suspend fun marcarComoLeida(
-        @Header("Authorization") auth: String,
-        @Path("id") id: String
+        @Header("Authorization") token: String,
+        @Path("id") notificacionId: String
     ): Response<JsonObject>
 
-    @PATCH("notificaciones/leer-multiples")
+    @PUT("notificaciones/marcar-leidas")
     suspend fun marcarVariasLeidas(
-        @Header("Authorization") auth: String,
+        @Header("Authorization") token: String,
         @Body body: JsonObject
     ): Response<JsonObject>
 
-    @PATCH("notificaciones/leer-todas")
+    @PUT("notificaciones/marcar-todas-leidas")
     suspend fun marcarTodasLeidas(
-        @Header("Authorization") auth: String
+        @Header("Authorization") token: String
     ): Response<JsonObject>
 
     @DELETE("notificaciones/{id}")
     suspend fun deleteNotificacion(
-        @Header("Authorization") auth: String,
-        @Path("id") id: String
-    ): Response<JsonObject>
-
-    @DELETE("notificaciones/limpiar/antiguas")
-    suspend fun eliminarLeidasAntiguas(
-        @Header("Authorization") auth: String
+        @Header("Authorization") token: String,
+        @Path("id") notificacionId: String
     ): Response<JsonObject>
 
     // ==================== CALENDARIO ====================
@@ -440,6 +440,17 @@ interface ApiRoutes {
 
     @POST("eventos")
     suspend fun createEvento(
+        @Header("Authorization") token: String,
+        @Body body: JsonObject
+    ): Response<JsonObject>
+    @POST("api/notificaciones/registrar-fcm-token")
+    suspend fun registrarFcmToken(
+        @Header("Authorization") token: String,
+        @Body body: JsonObject
+    ): Response<JsonObject>
+
+    @POST("api/notificaciones/eliminar-fcm-token")
+    suspend fun eliminarFcmToken(
         @Header("Authorization") token: String,
         @Body body: JsonObject
     ): Response<JsonObject>

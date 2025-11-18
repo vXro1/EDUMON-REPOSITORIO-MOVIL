@@ -1,5 +1,8 @@
 package com.example.edumonjetcompose
 
+import android.content.Intent
+import android.net.Uri
+import android.util.Base64
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -30,7 +33,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun DetalleEntregaProfesorScreen(
     navController: NavController,
-    entregaId: String
+    entregaId: String,
+    token: String
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -44,77 +48,101 @@ fun DetalleEntregaProfesorScreen(
     var comentario by remember { mutableStateOf("") }
     var isCalificando by remember { mutableStateOf(false) }
 
-    val token = remember {
-        context.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
-            .getString("token", "") ?: ""
+    // Log para debug
+    LaunchedEffect(Unit) {
+        android.util.Log.d("DETALLE_ENTREGA", "Token recibido: ${token.take(50)}...")
+        android.util.Log.d("DETALLE_ENTREGA", "EntregaId: $entregaId")
     }
 
-    val docenteId = remember {
-        context.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
-            .getString("user_id", "") ?: ""
+    // Función para cargar los datos de la entrega
+    fun cargarEntrega() {
+        scope.launch {
+            isLoading = true
+            try {
+                android.util.Log.d("DETALLE_ENTREGA", "Cargando entrega con ID: $entregaId")
+
+                val response = ApiService.getEntregaById(token, entregaId)
+
+                android.util.Log.d("DETALLE_ENTREGA", "Response code: ${response.code()}")
+
+                if (response.isSuccessful) {
+                    val body = response.body()
+                    body?.let { json ->
+                        val id = json.get("_id")?.asString ?: ""
+                        val textoRespuesta = json.get("textoRespuesta")?.asString ?: ""
+                        val fechaEntrega = json.get("fechaEntrega")?.asString
+                        val estado = json.get("estado")?.asString ?: "pendiente"
+
+                        // Calificación
+                        val calificacionObj = json.getAsJsonObject("calificacion")
+                        val notaActual = calificacionObj?.get("nota")?.asDouble
+                        val comentarioActual = calificacionObj?.get("comentario")?.asString
+
+                        // Estudiante
+                        val padreObj = json.getAsJsonObject("padreId")
+                        val estudianteNombre = "${padreObj?.get("nombre")?.asString ?: ""} ${padreObj?.get("apellido")?.asString ?: ""}"
+                        val estudianteFoto = padreObj?.get("fotoPerfilUrl")?.asString
+
+                        // Tarea
+                        val tareaObj = json.getAsJsonObject("tareaId")
+                        val tareaTitulo = tareaObj?.get("titulo")?.asString ?: ""
+
+                        // Archivos
+                        val archivosArray = json.getAsJsonArray("archivosAdjuntos")
+                        val archivos = mutableListOf<ArchivoAdjuntoEntrega>()
+                        archivosArray?.forEach { element ->
+                            val archivoObj = element.asJsonObject
+                            archivos.add(
+                                ArchivoAdjuntoEntrega(
+                                    url = archivoObj.get("url")?.asString ?: "",
+                                    nombreOriginal = archivoObj.get("nombreOriginal")?.asString ?: "",
+                                    tipoArchivo = archivoObj.get("tipoArchivo")?.asString ?: "",
+                                    tamano = archivoObj.get("tamano")?.asLong ?: 0L
+                                )
+                            )
+                        }
+
+                        entrega = DetalleEntrega(
+                            id = id,
+                            estudianteNombre = estudianteNombre,
+                            estudianteFoto = estudianteFoto,
+                            tareaTitulo = tareaTitulo,
+                            textoRespuesta = textoRespuesta,
+                            fechaEntrega = fechaEntrega,
+                            estado = estado,
+                            nota = notaActual,
+                            comentario = comentarioActual,
+                            archivos = archivos
+                        )
+
+                        // Pre-cargar nota y comentario si ya está calificada
+                        if (notaActual != null) {
+                            nota = notaActual.toString()
+                        }
+                        if (comentarioActual != null) {
+                            comentario = comentarioActual
+                        }
+
+                        android.util.Log.d("DETALLE_ENTREGA", "Entrega cargada exitosamente")
+                    }
+                } else {
+                    val errorBody = response.errorBody()?.string()
+                    android.util.Log.e("DETALLE_ENTREGA", "Error: ${response.code()} - $errorBody")
+                    snackbarHostState.showSnackbar("Error al cargar la entrega: ${response.code()}")
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                android.util.Log.e("DETALLE_ENTREGA", "Exception: ${e.message}", e)
+                snackbarHostState.showSnackbar("Error al cargar la entrega: ${e.message}")
+            } finally {
+                isLoading = false
+            }
+        }
     }
 
     // Cargar detalle de la entrega
     LaunchedEffect(entregaId) {
-        isLoading = true
-        try {
-            val response = ApiService.getEntregaById(token, entregaId)
-            if (response.isSuccessful) {
-                val body = response.body()
-                body?.let { json ->
-                    val id = json.get("_id")?.asString ?: ""
-                    val textoRespuesta = json.get("textoRespuesta")?.asString ?: ""
-                    val fechaEntrega = json.get("fechaEntrega")?.asString
-                    val estado = json.get("estado")?.asString ?: "pendiente"
-                    val notaActual = json.get("nota")?.asDouble
-                    val comentarioActual = json.get("comentario")?.asString
-
-                    // Estudiante
-                    val padreObj = json.getAsJsonObject("padreId")
-                    val estudianteNombre = "${padreObj?.get("nombre")?.asString ?: ""} ${padreObj?.get("apellido")?.asString ?: ""}"
-                    val estudianteFoto = padreObj?.get("fotoPerfilUrl")?.asString
-
-                    // Tarea
-                    val tareaObj = json.getAsJsonObject("tareaId")
-                    val tareaTitulo = tareaObj?.get("titulo")?.asString ?: ""
-
-                    // Archivos
-                    val archivosArray = json.getAsJsonArray("archivos")
-                    val archivos = mutableListOf<String>()
-                    archivosArray?.forEach { element ->
-                        archivos.add(element.asString)
-                    }
-
-                    entrega = DetalleEntrega(
-                        id = id,
-                        estudianteNombre = estudianteNombre,
-                        estudianteFoto = estudianteFoto,
-                        tareaTitulo = tareaTitulo,
-                        textoRespuesta = textoRespuesta,
-                        fechaEntrega = fechaEntrega,
-                        estado = estado,
-                        nota = notaActual,
-                        comentario = comentarioActual,
-                        archivos = archivos
-                    )
-
-                    // Pre-cargar nota y comentario si ya está calificada
-                    if (notaActual != null) {
-                        nota = notaActual.toString()
-                    }
-                    if (comentarioActual != null) {
-                        comentario = comentarioActual
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            scope.launch {
-                snackbarHostState.showSnackbar("Error al cargar la entrega")
-            }
-        } finally {
-            isLoading = false
-        }
+        cargarEntrega()
     }
 
     Scaffold(
@@ -140,7 +168,7 @@ fun DetalleEntregaProfesorScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             val entregaActual = entrega
-            if (entregaActual != null && entregaActual.estado == "enviada") {
+            if (entregaActual != null && (entregaActual.estado == "enviada" || entregaActual.estado == "tarde")) {
                 ExtendedFloatingActionButton(
                     onClick = { showCalificarDialog = true },
                     containerColor = VerdeLima,
@@ -148,7 +176,10 @@ fun DetalleEntregaProfesorScreen(
                 ) {
                     Icon(Icons.Default.Star, "Calificar")
                     Spacer(Modifier.width(8.dp))
-                    Text("Calificar", fontWeight = FontWeight.Bold)
+                    Text(
+                        if (entregaActual.nota == null) "Calificar" else "Editar nota",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         },
@@ -264,6 +295,7 @@ fun DetalleEntregaProfesorScreen(
                                             shape = RoundedCornerShape(8.dp),
                                             color = when (entregaActual.estado) {
                                                 "calificada" -> VerdeLima.copy(alpha = 0.15f)
+                                                "tarde" -> ErrorOscuro.copy(alpha = 0.15f)
                                                 "enviada" -> Advertencia.copy(alpha = 0.15f)
                                                 else -> GrisClaro
                                             }
@@ -271,6 +303,7 @@ fun DetalleEntregaProfesorScreen(
                                             Text(
                                                 when (entregaActual.estado) {
                                                     "calificada" -> "Calificada"
+                                                    "tarde" -> "Entrega tardía"
                                                     "enviada" -> "Enviada"
                                                     else -> "Pendiente"
                                                 },
@@ -279,6 +312,7 @@ fun DetalleEntregaProfesorScreen(
                                                 fontWeight = FontWeight.Bold,
                                                 color = when (entregaActual.estado) {
                                                     "calificada" -> VerdeLima
+                                                    "tarde" -> ErrorOscuro
                                                     "enviada" -> Advertencia
                                                     else -> GrisMedio
                                                 }
@@ -344,7 +378,7 @@ fun DetalleEntregaProfesorScreen(
                                             fontWeight = FontWeight.Medium
                                         )
                                         Text(
-                                            String.format("%.1f / 5.0", notaActual),
+                                            String.format("%.1f / 100", notaActual),
                                             style = MaterialTheme.typography.headlineMedium,
                                             fontWeight = FontWeight.Bold,
                                             color = VerdeLima
@@ -395,11 +429,8 @@ fun DetalleEntregaProfesorScreen(
                                 Column(
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    entregaActual.archivos.forEachIndexed { index, url ->
-                                        ArchivoEntregaCard(
-                                            url = url,
-                                            index = index + 1
-                                        )
+                                    entregaActual.archivos.forEach { archivo ->
+                                        ArchivoEntregaCardClickeable(archivo = archivo)
                                     }
                                 }
                             }
@@ -449,12 +480,11 @@ fun DetalleEntregaProfesorScreen(
                     OutlinedTextField(
                         value = nota,
                         onValueChange = { newValue ->
-                            // Validar que sea número entre 0 y 5
-                            if (newValue.isEmpty() || newValue.toDoubleOrNull()?.let { it in 0.0..5.0 } == true) {
+                            if (newValue.isEmpty() || newValue.toDoubleOrNull()?.let { it in 0.0..100.0 } == true) {
                                 nota = newValue
                             }
                         },
-                        label = { Text("Nota (0.0 - 5.0)") },
+                        label = { Text("Nota (0 - 100)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         leadingIcon = {
@@ -498,9 +528,9 @@ fun DetalleEntregaProfesorScreen(
                 Button(
                     onClick = {
                         val notaDouble = nota.toDoubleOrNull()
-                        if (notaDouble == null || notaDouble < 0.0 || notaDouble > 5.0) {
+                        if (notaDouble == null || notaDouble < 0.0 || notaDouble > 100.0) {
                             scope.launch {
-                                snackbarHostState.showSnackbar("Nota inválida. Debe estar entre 0.0 y 5.0")
+                                snackbarHostState.showSnackbar("Nota inválida. Debe estar entre 0 y 100")
                             }
                             return@Button
                         }
@@ -510,6 +540,18 @@ fun DetalleEntregaProfesorScreen(
                         scope.launch {
                             isCalificando = true
                             try {
+                                val docenteId = getUserIdFromToken(token)
+
+                                android.util.Log.d("CALIFICAR_ENTREGA", "Token: ${token.take(50)}...")
+                                android.util.Log.d("CALIFICAR_ENTREGA", "DocenteId: $docenteId")
+                                android.util.Log.d("CALIFICAR_ENTREGA", "EntregaId: $entregaId")
+                                android.util.Log.d("CALIFICAR_ENTREGA", "Nota: $notaDouble")
+
+                                if (docenteId.isEmpty()) {
+                                    snackbarHostState.showSnackbar("Error: No se pudo obtener el ID del docente")
+                                    return@launch
+                                }
+
                                 val response = ApiService.calificarEntrega(
                                     token = token,
                                     entregaId = entregaId,
@@ -518,30 +560,20 @@ fun DetalleEntregaProfesorScreen(
                                     docenteId = docenteId
                                 )
 
+                                android.util.Log.d("CALIFICAR_ENTREGA", "Response code: ${response.code()}")
+
                                 if (response.isSuccessful) {
                                     snackbarHostState.showSnackbar("Entrega calificada exitosamente")
                                     showCalificarDialog = false
-
-                                    // Recargar datos
-                                    val reloadResponse = ApiService.getEntregaById(token, entregaId)
-                                    if (reloadResponse.isSuccessful) {
-                                        val body = reloadResponse.body()
-                                        body?.let { json ->
-                                            val entregaActualizada = entrega
-                                            if (entregaActualizada != null) {
-                                                entrega = entregaActualizada.copy(
-                                                    estado = "calificada",
-                                                    nota = json.get("nota")?.asDouble,
-                                                    comentario = json.get("comentario")?.asString
-                                                )
-                                            }
-                                        }
-                                    }
+                                    cargarEntrega()
                                 } else {
-                                    snackbarHostState.showSnackbar("Error al calificar")
+                                    val errorBody = response.errorBody()?.string()
+                                    android.util.Log.e("CALIFICAR_ENTREGA", "Error: $errorBody")
+                                    snackbarHostState.showSnackbar("Error al calificar: ${response.code()}")
                                 }
                             } catch (e: Exception) {
                                 e.printStackTrace()
+                                android.util.Log.e("CALIFICAR_ENTREGA", "Exception: ${e.message}", e)
                                 snackbarHostState.showSnackbar("Error: ${e.message}")
                             } finally {
                                 isCalificando = false
@@ -579,15 +611,55 @@ fun DetalleEntregaProfesorScreen(
 // ==================== COMPONENTES ====================
 
 @Composable
-fun ArchivoEntregaCard(
-    url: String,
-    index: Int
+fun InfoSection(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    content: @Composable () -> Unit
 ) {
-    val nombreArchivo = url.substringAfterLast("/")
-    val extension = nombreArchivo.substringAfterLast(".", "")
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = FondoCard,
+        tonalElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = AzulCielo,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = GrisOscuro
+                )
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+fun ArchivoEntregaCardClickeable(
+    archivo: ArchivoAdjuntoEntrega
+) {
+    val context = LocalContext.current
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                abrirArchivo(context, archivo.url)
+            },
         shape = RoundedCornerShape(8.dp),
         color = AzulCielo.copy(alpha = 0.05f),
         border = BorderStroke(1.dp, AzulCielo.copy(alpha = 0.2f))
@@ -603,49 +675,127 @@ fun ArchivoEntregaCard(
                 shape = CircleShape,
                 color = AzulCielo.copy(alpha = 0.15f)
             ) {
-                Box(
-                    modifier = Modifier.size(40.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        index.toString(),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = AzulCielo
-                    )
-                }
+                Icon(
+                    when {
+                        archivo.tipoArchivo.contains("image") -> Icons.Default.Image
+                        archivo.tipoArchivo.contains("video") -> Icons.Default.VideoLibrary
+                        archivo.tipoArchivo.contains("pdf") -> Icons.Default.PictureAsPdf
+                        else -> Icons.Default.InsertDriveFile
+                    },
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(20.dp),
+                    tint = AzulCielo
+                )
             }
 
             Column(
                 modifier = Modifier.weight(1f)
             ) {
                 Text(
-                    nombreArchivo,
+                    archivo.nombreOriginal,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                     color = GrisOscuro,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (extension.isNotEmpty()) {
-                    Text(
-                        extension.uppercase(),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GrisMedio
-                    )
-                }
-            }
-
-            IconButton(
-                onClick = { /* Abrir/Descargar archivo */ },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    Icons.Default.OpenInNew,
-                    contentDescription = "Abrir",
-                    tint = AzulCielo
+                Text(
+                    "${formatearTamano(archivo.tamano)} • ${archivo.tipoArchivo}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GrisMedio
                 )
             }
+
+            Icon(
+                Icons.Default.OpenInNew,
+                contentDescription = "Abrir",
+                tint = AzulCielo,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
+
+// ==================== FUNCIONES AUXILIARES ====================
+
+fun abrirArchivo(context: android.content.Context, url: String) {
+    try {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            data = Uri.parse(url)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        e.printStackTrace()
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse(url)
+                setPackage("com.android.chrome")
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+}
+
+fun getUserIdFromToken(token: String): String {
+    return try {
+        val cleanToken = token.removePrefix("Bearer ").trim()
+        val parts = cleanToken.split(".")
+
+        if (parts.size == 3) {
+            val payload = String(Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_WRAP))
+            val json = com.google.gson.JsonParser.parseString(payload).asJsonObject
+            val userId = json.get("userId")?.asString ?: ""
+
+            android.util.Log.d("JWT_DECODE", "Extracted userId: $userId")
+            userId
+        } else {
+            android.util.Log.e("JWT_DECODE", "Invalid token format - parts: ${parts.size}")
+            ""
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("JWT_DECODE", "Error decoding token: ${e.message}", e)
+        ""
+    }
+}
+
+fun formatearFechaEntrega(fecha: String): String {
+    return try {
+        val sdfInput = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", java.util.Locale.getDefault())
+        sdfInput.timeZone = java.util.TimeZone.getTimeZone("UTC")
+        val date = sdfInput.parse(fecha)
+
+        val sdfOutput = java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale("es", "ES"))
+        sdfOutput.format(date!!)
+    } catch (e: Exception) {
+        fecha
+    }
+}
+
+fun formatearTamano(bytes: Long): String {
+    return when {
+        bytes < 1024 -> "$bytes B"
+        bytes < 1024 * 1024 -> "${bytes / 1024} KB"
+        else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
+    }
+}
+
+// ==================== MODELO DE DATOS ====================
+
+data class DetalleEntrega(
+    val id: String,
+    val estudianteNombre: String,
+    val estudianteFoto: String?,
+    val tareaTitulo: String,
+    val textoRespuesta: String,
+    val fechaEntrega: String?,
+    val estado: String,
+    val nota: Double?,
+    val comentario: String?,
+    val archivos: List<ArchivoAdjuntoEntrega>
+)

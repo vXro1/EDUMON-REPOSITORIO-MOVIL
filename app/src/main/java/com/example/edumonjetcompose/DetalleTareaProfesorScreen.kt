@@ -1,5 +1,7 @@
 package com.example.edumonjetcompose
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +23,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.example.edumonjetcompose.models.*
@@ -29,6 +33,9 @@ import com.example.edumonjetcompose.ui.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import android.util.Base64
+import com.example.edumonjetcompose.utils.abrirUrl
+import com.example.edumonjetcompose.utils.estaVencida
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,8 +43,7 @@ fun DetalleTareaProfesorScreen(
     navController: NavController,
     tareaId: String,
     token: String
-
-    ) {
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -50,16 +56,66 @@ fun DetalleTareaProfesorScreen(
     var showOptionsMenu by remember { mutableStateOf(false) }
     var selectedTab by remember { mutableStateOf(0) }
 
-    val token = remember {
-        context.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
-            .getString("token", "") ?: ""
+    var showCalificacionDialog by remember { mutableStateOf(false) }
+    var selectedEntrega by remember { mutableStateOf<EntregaDetalleCompleta?>(null) }
+    var isLoadingEntrega by remember { mutableStateOf(false) }
+
+    fun cargarEntregas() {
+        scope.launch {
+            try {
+                val entregasResponse = ApiService.getEntregasByTarea(token, tareaId)
+                if (entregasResponse.isSuccessful) {
+                    val body = entregasResponse.body()
+                    val entregasArray = body?.getAsJsonArray("entregas")
+
+                    val entregasList = mutableListOf<EntregaEstudiante>()
+                    entregasArray?.forEach { element ->
+                        try {
+                            val entregaObj = element.asJsonObject
+                            val id = entregaObj.get("_id")?.asString ?: ""
+                            val estado = entregaObj.get("estado")?.asString ?: "pendiente"
+
+                            if (estado == "enviada" || estado == "tarde") {
+                                val fechaEntrega = entregaObj.get("fechaEntrega")?.asString
+
+                                val calificacionObj = entregaObj.getAsJsonObject("calificacion")
+                                val nota = calificacionObj?.get("nota")?.asDouble
+                                val comentario = calificacionObj?.get("comentario")?.asString
+
+                                val padreObj = entregaObj.getAsJsonObject("padreId")
+                                val padreNombre = padreObj?.get("nombre")?.asString ?: ""
+                                val padreApellido = padreObj?.get("apellido")?.asString ?: ""
+                                val padreFoto = padreObj?.get("fotoPerfilUrl")?.asString
+
+                                val estadoFinal = if (nota != null) "calificada" else estado
+
+                                entregasList.add(
+                                    EntregaEstudiante(
+                                        id = id,
+                                        estudianteNombre = "$padreNombre $padreApellido",
+                                        estudianteFoto = padreFoto,
+                                        estado = estadoFinal,
+                                        fechaEntrega = fechaEntrega,
+                                        nota = nota,
+                                        comentario = comentario
+                                    )
+                                )
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    entregas = entregasList
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
-    // Cargar datos de la tarea y entregas
     LaunchedEffect(tareaId) {
         isLoading = true
         try {
-            // Obtener detalle de la tarea
             val tareaResponse = ApiService.getTareaById(token, tareaId)
             if (tareaResponse.isSuccessful) {
                 val body = tareaResponse.body()
@@ -71,11 +127,9 @@ fun DetalleTareaProfesorScreen(
                     val fechaLimite = json.get("fechaLimite")?.asString ?: ""
                     val estado = json.get("estado")?.asString ?: "activa"
 
-                    // Módulo
                     val moduloObj = json.getAsJsonObject("moduloId")
                     val moduloNombre = moduloObj?.get("nombre")?.asString ?: "Sin módulo"
 
-                    // Archivos
                     val archivosArray = json.getAsJsonArray("archivos")
                     val archivos = mutableListOf<ArchivoAdjunto>()
                     archivosArray?.forEach { element ->
@@ -102,45 +156,7 @@ fun DetalleTareaProfesorScreen(
                 }
             }
 
-            // Obtener entregas de la tarea
-            val entregasResponse = ApiService.getEntregasByTarea(token, tareaId)
-            if (entregasResponse.isSuccessful) {
-                val body = entregasResponse.body()
-                val entregasArray = body?.getAsJsonArray("entregas")
-
-                val entregasList = mutableListOf<EntregaEstudiante>()
-                entregasArray?.forEach { element ->
-                    try {
-                        val entregaObj = element.asJsonObject
-                        val id = entregaObj.get("_id")?.asString ?: ""
-                        val estado = entregaObj.get("estado")?.asString ?: "pendiente"
-                        val fechaEntrega = entregaObj.get("fechaEntrega")?.asString
-                        val nota = entregaObj.get("nota")?.asDouble
-                        val comentario = entregaObj.get("comentario")?.asString
-
-                        // Información del padre/estudiante
-                        val padreObj = entregaObj.getAsJsonObject("padreId")
-                        val padreNombre = padreObj?.get("nombre")?.asString ?: ""
-                        val padreApellido = padreObj?.get("apellido")?.asString ?: ""
-                        val padreFoto = padreObj?.get("fotoPerfilUrl")?.asString
-
-                        entregasList.add(
-                            EntregaEstudiante(
-                                id = id,
-                                estudianteNombre = "$padreNombre $padreApellido",
-                                estudianteFoto = padreFoto,
-                                estado = estado,
-                                fechaEntrega = fechaEntrega,
-                                nota = nota,
-                                comentario = comentario
-                            )
-                        )
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-                entregas = entregasList
-            }
+            cargarEntregas()
         } catch (e: Exception) {
             e.printStackTrace()
             scope.launch {
@@ -269,7 +285,6 @@ fun DetalleTareaProfesorScreen(
                     .fillMaxSize()
                     .padding(padding)
             ) {
-                // Tabs
                 TabRow(
                     selectedTabIndex = selectedTab,
                     containerColor = FondoCard,
@@ -308,13 +323,73 @@ fun DetalleTareaProfesorScreen(
                     )
                 }
 
-                // Contenido según tab seleccionada
                 when (selectedTab) {
                     0 -> InformacionTareaTab(tarea!!)
                     1 -> EntregasTab(
                         entregas = entregas,
                         onEntregaClick = { entregaId ->
-                            navController.navigate("detalle_entrega_profesor/$entregaId")
+                            isLoadingEntrega = true
+                            showCalificacionDialog = true
+                            scope.launch {
+                                try {
+                                    val response = ApiService.getEntregaById(token, entregaId)
+                                    if (response.isSuccessful) {
+                                        val body = response.body()
+                                        body?.let { json ->
+                                            val id = json.get("_id")?.asString ?: ""
+                                            val textoRespuesta = json.get("textoRespuesta")?.asString
+                                            val estado = json.get("estado")?.asString ?: ""
+                                            val fechaEntrega = json.get("fechaEntrega")?.asString
+
+                                            val padreObj = json.getAsJsonObject("padreId")
+                                            val padreNombre = padreObj?.get("nombre")?.asString ?: ""
+                                            val padreApellido = padreObj?.get("apellido")?.asString ?: ""
+                                            val padreFoto = padreObj?.get("fotoPerfilUrl")?.asString
+
+                                            val archivosArray = json.getAsJsonArray("archivosAdjuntos")
+                                            val archivos = mutableListOf<ArchivoAdjuntoEntrega>()
+                                            archivosArray?.forEach { element ->
+                                                val archivoObj = element.asJsonObject
+                                                archivos.add(
+                                                    ArchivoAdjuntoEntrega(
+                                                        url = archivoObj.get("url")?.asString ?: "",
+                                                        nombreOriginal = archivoObj.get("nombreOriginal")?.asString ?: "",
+                                                        tipoArchivo = archivoObj.get("tipoArchivo")?.asString ?: "",
+                                                        tamano = archivoObj.get("tamano")?.asLong ?: 0L
+                                                    )
+                                                )
+                                            }
+
+                                            val calificacionObj = json.getAsJsonObject("calificacion")
+                                            var notaActual: Double? = null
+                                            var comentarioActual: String? = null
+
+                                            if (calificacionObj != null) {
+                                                notaActual = calificacionObj.get("nota")?.asDouble
+                                                comentarioActual = calificacionObj.get("comentario")?.asString
+                                            }
+
+                                            selectedEntrega = EntregaDetalleCompleta(
+                                                id = id,
+                                                estudianteNombre = "$padreNombre $padreApellido",
+                                                estudianteFoto = padreFoto,
+                                                estado = estado,
+                                                fechaEntrega = fechaEntrega,
+                                                textoRespuesta = textoRespuesta,
+                                                archivos = archivos,
+                                                notaActual = notaActual,
+                                                comentarioActual = comentarioActual
+                                            )
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    e.printStackTrace()
+                                    snackbarHostState.showSnackbar("Error al cargar la entrega")
+                                    showCalificacionDialog = false
+                                } finally {
+                                    isLoadingEntrega = false
+                                }
+                            }
                         }
                     )
                 }
@@ -322,7 +397,50 @@ fun DetalleTareaProfesorScreen(
         }
     }
 
-    // Diálogo de confirmación para eliminar
+    if (showCalificacionDialog) {
+        CalificacionDialog(
+            entrega = selectedEntrega,
+            isLoading = isLoadingEntrega,
+            onDismiss = {
+                showCalificacionDialog = false
+                selectedEntrega = null
+            },
+            onCalificar = { nota, comentario ->
+                scope.launch {
+                    try {
+                        val docenteId = getUserIdFromToken(token)
+
+                        if (docenteId.isEmpty()) {
+                            snackbarHostState.showSnackbar("Error: No se pudo obtener el ID del docente")
+                            return@launch
+                        }
+
+                        val response = ApiService.calificarEntrega(
+                            token = token,
+                            entregaId = selectedEntrega!!.id,
+                            nota = nota,
+                            comentario = if (comentario.isBlank()) null else comentario,
+                            docenteId = docenteId
+                        )
+
+                        if (response.isSuccessful) {
+                            snackbarHostState.showSnackbar("Entrega calificada exitosamente")
+                            showCalificacionDialog = false
+                            selectedEntrega = null
+                            cargarEntregas()
+                        } else {
+                            val errorBody = response.errorBody()?.string()
+                            snackbarHostState.showSnackbar("Error al calificar: ${response.code()}")
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        snackbarHostState.showSnackbar("Error: ${e.message}")
+                    }
+                }
+            }
+        )
+    }
+
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -377,7 +495,374 @@ fun DetalleTareaProfesorScreen(
     }
 }
 
-// ==================== TABS ====================
+@Composable
+fun CalificacionDialog(
+    entrega: EntregaDetalleCompleta?,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onCalificar: (Double, String) -> Unit
+) {
+    var nota by remember { mutableStateOf(entrega?.notaActual?.toString() ?: "") }
+    var comentario by remember { mutableStateOf(entrega?.comentarioActual ?: "") }
+    var notaError by remember { mutableStateOf(false) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .fillMaxHeight(0.9f),
+            shape = RoundedCornerShape(16.dp),
+            color = FondoClaro
+        ) {
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = AzulCielo)
+                }
+            } else if (entrega == null) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("Error al cargar la entrega", color = ErrorOscuro)
+                }
+            } else {
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Surface(
+                        color = AzulCielo,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                if (entrega.estudianteFoto != null) {
+                                    AsyncImage(
+                                        model = entrega.estudianteFoto,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(CircleShape)
+                                            .background(Color.White),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Surface(
+                                        modifier = Modifier.size(48.dp),
+                                        shape = CircleShape,
+                                        color = Color.White.copy(alpha = 0.3f)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                entrega.estudianteNombre.firstOrNull()?.uppercase() ?: "?",
+                                                style = MaterialTheme.typography.titleLarge,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Column {
+                                    Text(
+                                        entrega.estudianteNombre,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                    if (entrega.fechaEntrega != null) {
+                                        Text(
+                                            formatearFecha(entrega.fechaEntrega),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.White.copy(alpha = 0.8f)
+                                        )
+                                    }
+                                }
+                            }
+
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Cerrar",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        item {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                color = when (entrega.estado) {
+                                    "tarde" -> ErrorOscuro.copy(alpha = 0.1f)
+                                    "enviada" -> VerdeLima.copy(alpha = 0.1f)
+                                    else -> GrisClaro
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    when (entrega.estado) {
+                                        "tarde" -> ErrorOscuro
+                                        "enviada" -> VerdeLima
+                                        else -> GrisMedio
+                                    }
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        if (entrega.estado == "tarde") Icons.Default.Warning else Icons.Default.CheckCircle,
+                                        contentDescription = null,
+                                        tint = when (entrega.estado) {
+                                            "tarde" -> ErrorOscuro
+                                            "enviada" -> VerdeLima
+                                            else -> GrisMedio
+                                        }
+                                    )
+                                    Text(
+                                        if (entrega.estado == "tarde") "Entrega tardía" else "Entregado a tiempo",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = when (entrega.estado) {
+                                            "tarde" -> ErrorOscuro
+                                            "enviada" -> VerdeLima
+                                            else -> GrisMedio
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        if (!entrega.textoRespuesta.isNullOrBlank()) {
+                            item {
+                                TareaInfoSection(
+                                    title = "Respuesta",
+                                    icon = Icons.Default.Description
+                                ) {
+                                    Text(
+                                        entrega.textoRespuesta,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = GrisOscuro,
+                                        lineHeight = 24.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        if (entrega.archivos.isNotEmpty()) {
+                            item {
+                                TareaInfoSection(
+                                    title = "Archivos adjuntos (${entrega.archivos.size})",
+                                    icon = Icons.Default.AttachFile
+                                ) {
+                                    Column(
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        entrega.archivos.forEach { archivo ->
+                                            ArchivoEntregaCard(archivo)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        item {
+                            Divider(color = GrisClaro, thickness = 1.dp)
+                        }
+
+                        item {
+                            Text(
+                                "Calificación",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = GrisOscuro
+                            )
+                        }
+
+                        item {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    "Nota (0-100)",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = GrisOscuro
+                                )
+
+                                OutlinedTextField(
+                                    value = nota,
+                                    onValueChange = {
+                                        nota = it
+                                        notaError = false
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    placeholder = { Text("Ingrese la nota") },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Star, null, tint = AzulCielo)
+                                    },
+                                    isError = notaError,
+                                    supportingText = if (notaError) {
+                                        { Text("Ingrese una nota válida entre 0 y 100") }
+                                    } else null,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = AzulCielo,
+                                        unfocusedBorderColor = GrisClaro
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                            }
+                        }
+
+                        item { Spacer(Modifier.height(80.dp)) }
+                    }
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = FondoCard,
+                        shadowElevation = 8.dp
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .padding(16.dp)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = onDismiss,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = GrisMedio
+                                ),
+                                border = BorderStroke(1.dp, GrisClaro)
+                            ) {
+                                Text("Cancelar")
+                            }
+
+                            Button(
+                                onClick = {
+                                    val notaDouble = nota.toDoubleOrNull()
+                                    if (notaDouble == null || notaDouble < 0 || notaDouble > 100) {
+                                        notaError = true
+                                    } else {
+                                        onCalificar(notaDouble, comentario)
+                                    }
+                                },
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = AzulCielo
+                                )
+                            ) {
+                                Icon(
+                                    Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Calificar")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ArchivoEntregaCard(archivo: ArchivoAdjuntoEntrega) {
+    val context = LocalContext.current
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                abrirUrl(context, archivo.url)
+            },
+        shape = RoundedCornerShape(8.dp),
+        color = Fucsia.copy(alpha = 0.05f),
+        border = BorderStroke(1.dp, Fucsia.copy(alpha = 0.2f))
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = Fucsia.copy(alpha = 0.15f)
+            ) {
+                Icon(
+                    when {
+                        archivo.tipoArchivo.contains("image") -> Icons.Default.Image
+                        archivo.tipoArchivo.contains("video") -> Icons.Default.VideoLibrary
+                        archivo.tipoArchivo.contains("pdf") -> Icons.Default.PictureAsPdf
+                        else -> Icons.Default.InsertDriveFile
+                    },
+                    contentDescription = null,
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(20.dp),
+                    tint = Fucsia
+                )
+            }
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    archivo.nombreOriginal,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = GrisOscuro,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    "${formatearTamano(archivo.tamano)} • ${archivo.tipoArchivo}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GrisMedio
+                )
+            }
+
+            Icon(
+                Icons.Default.OpenInNew,
+                contentDescription = "Abrir",
+                tint = Fucsia,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
 
 @Composable
 fun InformacionTareaTab(tarea: TareaDetalleProfesor) {
@@ -386,7 +871,6 @@ fun InformacionTareaTab(tarea: TareaDetalleProfesor) {
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header con estado
         item {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -465,7 +949,6 @@ fun InformacionTareaTab(tarea: TareaDetalleProfesor) {
             }
         }
 
-        // Fechas
         item {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -489,9 +972,8 @@ fun InformacionTareaTab(tarea: TareaDetalleProfesor) {
             }
         }
 
-        // Descripción
         item {
-            InfoSection(
+            TareaInfoSection(
                 title = "Descripción",
                 icon = Icons.Default.Description
             ) {
@@ -504,10 +986,9 @@ fun InformacionTareaTab(tarea: TareaDetalleProfesor) {
             }
         }
 
-        // Archivos adjuntos
         if (tarea.archivos.isNotEmpty()) {
             item {
-                InfoSection(
+                TareaInfoSection(
                     title = "Archivos adjuntos",
                     icon = Icons.Default.AttachFile
                 ) {
@@ -538,7 +1019,8 @@ fun EntregasTab(
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(32.dp)
             ) {
                 Icon(
                     Icons.Default.Assignment,
@@ -549,12 +1031,14 @@ fun EntregasTab(
                 Text(
                     "No hay entregas aún",
                     style = MaterialTheme.typography.titleMedium,
-                    color = GrisMedio
+                    color = GrisMedio,
+                    fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Las entregas aparecerán aquí",
+                    "Las entregas enviadas aparecerán aquí",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = GrisMedio
+                    color = GrisMedio,
+                    textAlign = TextAlign.Center
                 )
             }
         }
@@ -564,12 +1048,10 @@ fun EntregasTab(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Estadísticas
             item {
                 EstadisticasEntregas(entregas)
             }
 
-            // Lista de entregas
             items(entregas) { entrega ->
                 EntregaEstudianteCard(
                     entrega = entrega,
@@ -581,8 +1063,6 @@ fun EntregasTab(
         }
     }
 }
-
-// ==================== COMPONENTES ====================
 
 @Composable
 fun FechaCard(
@@ -621,7 +1101,7 @@ fun FechaCard(
             }
 
             Text(
-                formatearFechaEntrega(fecha),
+                formatearFecha(fecha),
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Bold,
                 color = color
@@ -631,7 +1111,7 @@ fun FechaCard(
 }
 
 @Composable
-fun InfoSection(
+fun TareaInfoSection(
     title: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     content: @Composable () -> Unit
@@ -670,8 +1150,14 @@ fun InfoSection(
 
 @Composable
 fun ArchivoAdjuntoCard(archivo: ArchivoAdjunto) {
+    val context = LocalContext.current
+
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                abrirUrl(context, archivo.url)
+            },
         shape = RoundedCornerShape(8.dp),
         color = Fucsia.copy(alpha = 0.05f),
         border = BorderStroke(1.dp, Fucsia.copy(alpha = 0.2f))
@@ -715,16 +1201,12 @@ fun ArchivoAdjuntoCard(archivo: ArchivoAdjunto) {
                 )
             }
 
-            IconButton(
-                onClick = { /* Descargar/abrir archivo */ },
-                modifier = Modifier.size(32.dp)
-            ) {
-                Icon(
-                    Icons.Default.Download,
-                    contentDescription = "Descargar",
-                    tint = Fucsia
-                )
-            }
+            Icon(
+                Icons.Default.Download,
+                contentDescription = "Descargar",
+                tint = Fucsia,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }
@@ -732,8 +1214,9 @@ fun ArchivoAdjuntoCard(archivo: ArchivoAdjunto) {
 @Composable
 fun EstadisticasEntregas(entregas: List<EntregaEstudiante>) {
     val enviadas = entregas.count { it.estado == "enviada" }
+    val tarde = entregas.count { it.estado == "tarde" }
     val calificadas = entregas.count { it.estado == "calificada" }
-    val pendientes = entregas.count { it.estado == "pendiente" || it.estado == "borrador" }
+    val pendientesCalificar = entregas.count { it.estado == "enviada" || it.estado == "tarde" }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -746,15 +1229,6 @@ fun EstadisticasEntregas(entregas: List<EntregaEstudiante>) {
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             EstadisticaItem(
-                count = enviadas,
-                label = "Enviadas",
-                color = Advertencia
-            )
-            VerticalDivider(
-                modifier = Modifier.height(40.dp),
-                color = GrisClaro
-            )
-            EstadisticaItem(
                 count = calificadas,
                 label = "Calificadas",
                 color = VerdeLima
@@ -764,9 +1238,18 @@ fun EstadisticasEntregas(entregas: List<EntregaEstudiante>) {
                 color = GrisClaro
             )
             EstadisticaItem(
-                count = pendientes,
+                count = pendientesCalificar,
                 label = "Pendientes",
-                color = GrisMedio
+                color = Advertencia
+            )
+            VerticalDivider(
+                modifier = Modifier.height(40.dp),
+                color = GrisClaro
+            )
+            EstadisticaItem(
+                count = tarde,
+                label = "Tarde",
+                color = ErrorOscuro
             )
         }
     }
@@ -791,7 +1274,8 @@ fun EstadisticaItem(
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
-            color = GrisMedio
+            color = GrisMedio,
+            fontWeight = FontWeight.Medium
         )
     }
 }
@@ -816,7 +1300,6 @@ fun EntregaEstudianteCard(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar
             if (entrega.estudianteFoto != null) {
                 AsyncImage(
                     model = entrega.estudianteFoto,
@@ -844,7 +1327,6 @@ fun EntregaEstudianteCard(
                 }
             }
 
-            // Información
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -862,12 +1344,12 @@ fun EntregaEstudianteCard(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Estado
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = when (entrega.estado) {
                             "calificada" -> VerdeLima.copy(alpha = 0.15f)
                             "enviada" -> Advertencia.copy(alpha = 0.15f)
+                            "tarde" -> ErrorOscuro.copy(alpha = 0.15f)
                             else -> GrisClaro
                         }
                     ) {
@@ -875,7 +1357,7 @@ fun EntregaEstudianteCard(
                             when (entrega.estado) {
                                 "calificada" -> "Calificada"
                                 "enviada" -> "Enviada"
-                                "borrador" -> "Borrador"
+                                "tarde" -> "Entrega tardía"
                                 else -> "Pendiente"
                             },
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -884,51 +1366,93 @@ fun EntregaEstudianteCard(
                             color = when (entrega.estado) {
                                 "calificada" -> VerdeLima
                                 "enviada" -> Advertencia
+                                "tarde" -> ErrorOscuro
                                 else -> GrisMedio
                             }
                         )
                     }
 
-                    // Nota si está calificada
                     if (entrega.nota != null) {
-                        Text(
-                            "★ ${String.format("%.1f", entrega.nota)}",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = VerdeLima
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Star,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = VerdeLima
+                            )
+                            Text(
+                                String.format("%.1f", entrega.nota),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = VerdeLima
+                            )
+                        }
                     }
                 }
 
-                // Fecha de entrega
                 if (entrega.fechaEntrega != null) {
-                    Text(
-                        "Entregado: ${formatearFechaEntrega(entrega.fechaEntrega)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GrisMedio
-                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(12.dp),
+                            tint = GrisMedio
+                        )
+                        Text(
+                            formatearFecha(entrega.fechaEntrega),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GrisMedio
+                        )
+                    }
                 }
             }
 
-            Icon(
-                Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = GrisMedio
-            )
+            Column(
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                if (entrega.estado != "calificada") {
+                    Surface(
+                        shape = CircleShape,
+                        color = AzulCielo.copy(alpha = 0.15f)
+                    ) {
+                        Icon(
+                            Icons.Default.RateReview,
+                            contentDescription = "Calificar",
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .size(20.dp),
+                            tint = AzulCielo
+                        )
+                    }
+                } else {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Calificada",
+                        tint = VerdeLima,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
         }
     }
 }
 
-// ==================== MODELOS ====================
-
-data class TareaDetalleProfesor(val id: String,
-                                val titulo: String,
-                                val descripcion: String,
-                                val fechaCreacion: String,
-                                val fechaLimite: String,
-                                val estado: String,
-                                val moduloNombre: String,
-                                val archivos: List<ArchivoAdjunto>
+data class TareaDetalleProfesor(
+    val id: String,
+    val titulo: String,
+    val descripcion: String,
+    val fechaCreacion: String,
+    val fechaLimite: String,
+    val estado: String,
+    val moduloNombre: String,
+    val archivos: List<ArchivoAdjunto>
 )
 
 data class EntregaEstudiante(
@@ -941,29 +1465,21 @@ data class EntregaEstudiante(
     val comentario: String?
 )
 
-// ==================== FUNCIONES AUXILIARES ====================
+data class EntregaDetalleCompleta(
+    val id: String,
+    val estudianteNombre: String,
+    val estudianteFoto: String?,
+    val estado: String,
+    val fechaEntrega: String?,
+    val textoRespuesta: String?,
+    val archivos: List<ArchivoAdjuntoEntrega>,
+    val notaActual: Double?,
+    val comentarioActual: String?
+)
 
-fun estaVencida(fechaLimite: String): Boolean {
-    return try {
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
-        sdf.timeZone = TimeZone.getTimeZone("UTC")
-        val fecha = sdf.parse(fechaLimite)
-        val ahora = Date()
-        fecha?.before(ahora) ?: false
-    } catch (e: Exception) {
-        false
-    }
-}
-
-fun formatearFechaEntrega(fecha: String): String {
-    return try {
-        val sdfInput = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.getDefault())
-        sdfInput.timeZone = TimeZone.getTimeZone("UTC")
-        val date = sdfInput.parse(fecha)
-
-        val sdfOutput = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("es", "ES"))
-        sdfOutput.format(date!!)
-    } catch (e: Exception) {
-        fecha
-    }
-}
+data class ArchivoAdjuntoEntrega(
+    val url: String,
+    val nombreOriginal: String,
+    val tipoArchivo: String,
+    val tamano: Long
+)

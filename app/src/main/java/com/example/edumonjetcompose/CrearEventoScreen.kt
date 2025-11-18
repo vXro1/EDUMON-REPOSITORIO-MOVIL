@@ -48,10 +48,6 @@ fun CrearEventoScreen(
     var showDatePickerFin by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
 
-    val token = remember {
-        context.getSharedPreferences("user_prefs", android.content.Context.MODE_PRIVATE)
-            .getString("token", "") ?: ""
-    }
 
     val categorias = listOf(
         CategoriaEvento("escuela_padres", "Escuela de Padres", Icons.Default.School, AzulCielo),

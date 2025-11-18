@@ -35,12 +35,18 @@ import androidx.navigation.navArgument
 import com.example.edumonjetcompose.data.UserPreferences
 import com.example.edumonjetcompose.models.UserData
 import com.example.edumonjetcompose.network.ApiService
-import com.example.edumonjetcompose.screens.profesor.CalendarioScreenProfesor
 import com.example.edumonjetcompose.screens.profesor.InfoCursoScreenProfesor
 import com.example.edumonjetcompose.screens.profesor.ParticipantesCursoScreen
 import com.example.edumonjetcompose.ui.*
 import com.example.edumonjetcompose.ui.screens.*
+import com.example.edumonjetcompose.ui.theme.AzulCielo
+import com.example.edumonjetcompose.ui.theme.Blanco
+import com.example.edumonjetcompose.ui.theme.Cyan
 import com.example.edumonjetcompose.ui.theme.EDUMONTheme
+import com.example.edumonjetcompose.ui.theme.ErrorOscuro
+import com.example.edumonjetcompose.ui.theme.FondoClaro
+import com.example.edumonjetcompose.ui.theme.GrisNeutral
+import com.example.edumonjetcompose.ui.theme.Morado
 import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -653,7 +659,35 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+            composable(
+                route = "detalleEntrega/{entregaId}",
+                arguments = listOf(
+                    navArgument("entregaId") { type = NavType.StringType }
+                )
+            ) { backStackEntry ->
+                val entregaId = backStackEntry.arguments?.getString("entregaId") ?: ""
+                var localToken by remember { mutableStateOf("") }
+                var isLoadingToken by remember { mutableStateOf(true) }
 
+                LaunchedEffect(Unit) {
+                    localToken = withContext(Dispatchers.IO) {
+                        userPrefs.getToken() ?: token ?: ""
+                    }
+                    delay(100)
+                    isLoadingToken = false
+                }
+
+                if (isLoadingToken) {
+                    ModernLoadingIndicator()
+                } else {
+                    // REEMPLAZA 'DetalleEntregaScreen' con el nombre real de tu pantalla
+                    DetalleEntregaProfesorScreen(
+                        navController = navController,
+                        entregaId = entregaId,
+                        token = localToken
+                    )
+                }
+            }
             // ═══════════════════════════════════════════════════════════════
             // 💬 FOROS
             // ═══════════════════════════════════════════════════════════════
@@ -792,7 +826,44 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+// ═══════════════════════════════════════════════════════════════
+// 🔔 NOTIFICACIONES
+// ═══════════════════════════════════════════════════════════════
 
+            composable("notificaciones") {
+                var localToken by remember { mutableStateOf("") }
+                var isLoadingToken by remember { mutableStateOf(true) }
+
+                LaunchedEffect(Unit) {
+                    localToken = withContext(Dispatchers.IO) {
+                        userPrefs.getToken() ?: token ?: ""
+                    }
+                    delay(100)
+                    isLoadingToken = false
+                }
+
+                if (isLoadingToken) {
+                    ModernLoadingIndicator()
+                } else {
+                    if (localToken.isEmpty()) {
+                        // Si no hay token, redirigir al login
+                        LaunchedEffect(Unit) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(
+                                    context,
+                                    "Sesión expirada. Inicia sesión nuevamente.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                navController.navigate("login") {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            }
+                        }
+                    } else {
+                        NotificacionesScreen(navController = navController)
+                    }
+                }
+            }
             // ═══════════════════════════════════════════════════════════════
             // 📅 CALENDARIO
             // ═══════════════════════════════════════════════════════════════
@@ -816,7 +887,7 @@ class MainActivity : ComponentActivity() {
                 if (isLoadingToken) {
                     ModernLoadingIndicator()
                 } else {
-                    CalendarioScreen(navController, cursoId, localToken)
+                    CalendarioScreenPadre(navController, cursoId, localToken)
                 }
             }
 
@@ -1012,38 +1083,34 @@ class MainActivity : ComponentActivity() {
 
 // ==================== SPLASH SCREEN ====================
 
-data class Particula(
+data class Burbuja(
     val id: Int,
     val startX: Float,
-    val startY: Float,
     val size: Float,
     val duration: Int,
     val delay: Int,
-    val color: Color,
-    val moveX: Float,
-    val moveY: Float
+    val color: Color
 )
 
 @Composable
 fun ModernSplashScreen() {
-    val particulas = remember {
-        List(25) { index ->
-            Particula(
+    val burbujas = remember {
+        List(30) { index ->
+            Burbuja(
                 id = index,
                 startX = Random.nextFloat(),
-                startY = Random.nextFloat(),
-                size = Random.nextFloat() * 40f + 20f,
-                duration = Random.nextInt(4000, 8000),
-                delay = Random.nextInt(0, 2000),
+                size = Random.nextFloat() * 60f + 30f,
+                duration = Random.nextInt(5000, 10000),
+                delay = Random.nextInt(0, 3000),
                 color = listOf(
-                    AzulCielo.copy(alpha = 0.4f),
-                    Celeste.copy(alpha = 0.35f),
-                    VerdeLima.copy(alpha = 0.3f),
-                    Fucsia.copy(alpha = 0.25f),
-                    Naranja.copy(alpha = 0.3f)
-                ).random(),
-                moveX = Random.nextFloat() * 0.3f - 0.15f,
-                moveY = Random.nextFloat() * 0.3f - 0.15f
+                    AzulCielo.copy(alpha = 0.15f),
+                    Celeste.copy(alpha = 0.12f),
+                    VerdeLima.copy(alpha = 0.1f),
+                    Fucsia.copy(alpha = 0.08f),
+                    Naranja.copy(alpha = 0.1f),
+                    Morado.copy(alpha = 0.1f),
+                    Cyan.copy(alpha = 0.12f)
+                ).random()
             )
         }
     }
@@ -1051,60 +1118,14 @@ fun ModernSplashScreen() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF0A4D68),
-                        Color(0xFF05BFDB),
-                        Color(0xFF00E7FF)
-                    ),
-                    center = androidx.compose.ui.geometry.Offset(0.5f, 0.3f),
-                    radius = 1200f
-                )
-            )
+            .background(Blanco)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            Color.Black.copy(alpha = 0.15f),
-                            Color.Transparent
-                        )
-                    )
-                )
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.fondo),
-                contentDescription = "Fondo",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .alpha(0.15f),
-                contentScale = ContentScale.Crop
-            )
+        // Burbujas flotantes
+        burbujas.forEach { burbuja ->
+            BurbujaAnimada(burbuja = burbuja)
         }
 
-        particulas.forEach { particula ->
-            ParticulaAnimada(particula = particula)
-        }
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.15f),
-                            Color.Transparent
-                        ),
-                        center = androidx.compose.ui.geometry.Offset(0.5f, 0.35f),
-                        radius = 600f
-                    )
-                )
-        )
-
+        // Contenido principal
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1121,6 +1142,7 @@ fun ModernSplashScreen() {
             LoadingIndicatorPremium()
         }
 
+        // Versión
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1131,10 +1153,101 @@ fun ModernSplashScreen() {
                 text = "v1.0.0",
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.5f),
+                color = GrisNeutral,
                 letterSpacing = 2.sp
             )
         }
+    }
+}
+
+@Composable
+fun BurbujaAnimada(burbuja: Burbuja) {
+    val infiniteTransition = rememberInfiniteTransition(label = "burbuja_${burbuja.id}")
+
+    // Movimiento vertical de abajo hacia arriba
+    val offsetY by infiniteTransition.animateFloat(
+        initialValue = 1.2f,
+        targetValue = -0.2f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = burbuja.duration,
+                easing = LinearEasing,
+                delayMillis = burbuja.delay
+            ),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "offsetY"
+    )
+
+    // Movimiento horizontal sutil (ondulación)
+    val offsetX by infiniteTransition.animateFloat(
+        initialValue = burbuja.startX - 0.05f,
+        targetValue = burbuja.startX + 0.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = burbuja.duration / 2,
+                easing = FastOutSlowInEasing
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "offsetX"
+    )
+
+    // Escala pulsante
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1.1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(
+                durationMillis = burbuja.duration / 3,
+                easing = FastOutSlowInEasing
+            ),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
+    // Alpha que aparece y desaparece
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = keyframes {
+                durationMillis = burbuja.duration
+                0f at 0
+                1f at 500
+                1f at (burbuja.duration * 0.8).toInt()
+                0f at burbuja.duration
+            },
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "alpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+    ) {
+        Box(
+            modifier = Modifier
+                .size(burbuja.size.dp)
+                .offset(
+                    x = (offsetX * 1000).dp,
+                    y = (offsetY * 2000).dp
+                )
+                .scale(scale)
+                .alpha(alpha)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            burbuja.color,
+                            burbuja.color.copy(alpha = burbuja.color.alpha * 0.5f),
+                            Color.Transparent
+                        )
+                    ),
+                    CircleShape
+                )
+        )
     }
 }
 
@@ -1143,8 +1256,8 @@ fun LogoAnimadoPremium() {
     val infiniteTransition = rememberInfiniteTransition(label = "logo")
 
     val scale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.05f,
+        initialValue = 0.96f,
+        targetValue = 1.04f,
         animationSpec = infiniteRepeatable(
             animation = tween(2000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -1176,6 +1289,7 @@ fun LogoAnimadoPremium() {
         modifier = Modifier.size(220.dp),
         contentAlignment = Alignment.Center
     ) {
+        // Anillo exterior rotatorio con gradiente
         Surface(
             modifier = Modifier
                 .size(220.dp)
@@ -1188,30 +1302,32 @@ fun LogoAnimadoPremium() {
                 3.dp,
                 Brush.sweepGradient(
                     colors = listOf(
-                        Celeste.copy(alpha = 0.6f),
-                        VerdeLima.copy(alpha = 0.6f),
-                        Fucsia.copy(alpha = 0.6f),
-                        Naranja.copy(alpha = 0.6f),
-                        Celeste.copy(alpha = 0.6f)
+                        AzulCielo.copy(alpha = 0.8f),
+                        VerdeLima.copy(alpha = 0.8f),
+                        Fucsia.copy(alpha = 0.8f),
+                        Naranja.copy(alpha = 0.8f),
+                        AzulCielo.copy(alpha = 0.8f)
                     )
                 )
             )
         ) {}
 
+        // Resplandor intermedio
         Surface(
             modifier = Modifier
                 .size(190.dp)
                 .scale(scale),
             shape = CircleShape,
-            color = Color.White.copy(alpha = glow * 0.15f)
+            color = AzulCielo.copy(alpha = glow * 0.1f)
         ) {}
 
+        // Logo central - AQUÍ VA TU IMAGEN
         Surface(
             modifier = Modifier
                 .size(160.dp)
                 .scale(scale),
             shape = CircleShape,
-            color = Color.White,
+            color = Blanco,
             shadowElevation = 24.dp
         ) {
             Box(
@@ -1220,33 +1336,26 @@ fun LogoAnimadoPremium() {
                     .background(
                         Brush.radialGradient(
                             colors = listOf(
-                                AzulCielo,
-                                Color(0xFF0288D1)
+                                AzulCielo.copy(alpha = 0.1f),
+                                Blanco
                             )
                         )
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        text = "E",
-                        fontSize = 72.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color.White,
-                        style = androidx.compose.ui.text.TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = Color.Black.copy(alpha = 0.3f),
-                                offset = androidx.compose.ui.geometry.Offset(0f, 4f),
-                                blurRadius = 8f
-                            )
-                        )
-                    )
-                }
+                // REEMPLAZA ESTO CON TU IMAGEN DEL LOGO
+                Image(
+                    painter = painterResource(id = R.drawable.fondo), // <-- PON AQUÍ TU LOGO
+                    contentDescription = "Logo Edumon",
+                    modifier = Modifier
+                        .size(120.dp)
+                        .padding(20.dp),
+                    contentScale = ContentScale.Fit
+                )
             }
         }
 
+        // Partículas orbitales
         for (i in 0..2) {
             val orbitRotation by infiniteTransition.animateFloat(
                 initialValue = i * 120f,
@@ -1293,31 +1402,18 @@ fun TituloAnimado() {
         label = "shimmer"
     )
 
-    Box(
-        modifier = Modifier
-            .background(
-                Brush.horizontalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.0f),
-                        Color.White.copy(alpha = 0.3f),
-                        Color.White.copy(alpha = 0.0f)
-                    ),
-                    startX = shimmer * 300f,
-                    endX = shimmer * 300f + 300f
-                )
-            )
-    ) {
+    Box {
         Text(
             text = "EDUMON",
             fontSize = 48.sp,
             fontWeight = FontWeight.Black,
-            color = Color.White,
+            color = AzulCielo,
             letterSpacing = 6.sp,
             style = androidx.compose.ui.text.TextStyle(
                 shadow = androidx.compose.ui.graphics.Shadow(
-                    color = Color.Black.copy(alpha = 0.4f),
-                    offset = androidx.compose.ui.geometry.Offset(0f, 6f),
-                    blurRadius = 12f
+                    color = AzulCielo.copy(alpha = 0.3f),
+                    offset = androidx.compose.ui.geometry.Offset(0f, 4f),
+                    blurRadius = 8f
                 )
             )
         )
@@ -1327,7 +1423,7 @@ fun TituloAnimado() {
 @Composable
 fun SubtituloAnimado() {
     val alpha by rememberInfiniteTransition(label = "subtitulo").animateFloat(
-        initialValue = 0.6f,
+        initialValue = 0.5f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(2000, easing = FastOutSlowInEasing),
@@ -1344,7 +1440,7 @@ fun SubtituloAnimado() {
             text = "Plataforma Educativa",
             fontSize = 18.sp,
             fontWeight = FontWeight.SemiBold,
-            color = Color.White.copy(alpha = alpha),
+            color = GrisOscuro.copy(alpha = alpha),
             letterSpacing = 2.sp
         )
 
@@ -1388,7 +1484,7 @@ fun LoadingIndicatorPremium() {
                 .width(240.dp)
                 .height(4.dp)
                 .background(
-                    Color.White.copy(alpha = 0.2f),
+                    GrisClaro,
                     androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
                 )
         ) {
@@ -1399,8 +1495,8 @@ fun LoadingIndicatorPremium() {
                     .background(
                         Brush.horizontalGradient(
                             colors = listOf(
+                                AzulCielo,
                                 VerdeLima,
-                                Celeste,
                                 Fucsia
                             )
                         ),
@@ -1428,105 +1524,56 @@ fun LoadingIndicatorPremium() {
                         .size(8.dp)
                         .scale(dotScale),
                     shape = CircleShape,
-                    color = Color.White.copy(alpha = 0.8f)
+                    color = AzulCielo
                 ) {}
             }
         }
     }
 }
 
+// ==================== MODERN LOADING INDICATOR ====================
+
 @Composable
-fun ParticulaAnimada(particula: Particula) {
-    val infiniteTransition = rememberInfiniteTransition(label = "particula_${particula.id}")
+fun ModernLoadingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "modernLoading")
 
-    val offsetX by infiniteTransition.animateFloat(
-        initialValue = particula.startX,
-        targetValue = particula.startX + particula.moveX,
-        animationSpec = infiniteRepeatable(
-            animation = tween(particula.duration, easing = FastOutSlowInEasing, delayMillis = particula.delay),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "offsetX"
-    )
-
-    val offsetY by infiniteTransition.animateFloat(
-        initialValue = particula.startY,
-        targetValue = particula.startY + particula.moveY,
-        animationSpec = infiniteRepeatable(
-            animation = tween(particula.duration, easing = FastOutSlowInEasing, delayMillis = particula.delay),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "offsetY"
-    )
-
-    val alpha by infiniteTransition.animateFloat(
+    // Rotación del gradiente circular
+    val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 1f,
+        targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = keyframes {
-                durationMillis = particula.duration
-                0f at 0
-                1f at 300
-                1f at particula.duration - 500
-                0f at particula.duration
-            },
+            animation = tween(2000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "alpha"
+        label = "rotation"
     )
 
+    // Pulsación del logo
     val scale by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 1.2f,
+        initialValue = 0.95f,
+        targetValue = 1.05f,
         animationSpec = infiniteRepeatable(
-            animation = tween(particula.duration / 2, easing = FastOutSlowInEasing),
+            animation = tween(1000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "scale"
     )
 
+    // Alpha del resplandor
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .wrapContentSize(Alignment.TopStart)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(particula.size.dp)
-                .offset(
-                    x = (offsetX * 1000).dp,
-                    y = (offsetY * 2000).dp
-                )
-                .scale(scale)
-                .alpha(alpha)
-                .background(
-                    Brush.radialGradient(
-                        colors = listOf(
-                            particula.color,
-                            particula.color.copy(alpha = 0f)
-                        )
-                    ),
-                    CircleShape
-                )
-        )
-    }
-}
-
-// ==================== LOADING INDICATOR ====================
-
-@Composable
-fun ModernLoadingIndicator() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFFF8F9FA),
-                        Color.White
-                    )
-                )
-            ),
+            .background(Blanco),
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -1535,33 +1582,140 @@ fun ModernLoadingIndicator() {
             modifier = Modifier.padding(32.dp)
         ) {
             Box(
-                modifier = Modifier.size(80.dp),
+                modifier = Modifier.size(120.dp),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(80.dp),
-                    color = AzulCielo,
-                    strokeWidth = 6.dp,
-                    trackColor = Color(0xFFE3F2FD)
-                )
-
+                // Anillo exterior rotatorio con gradiente
                 Surface(
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier
+                        .size(120.dp)
+                        .graphicsLayer {
+                            rotationZ = rotation
+                        },
                     shape = CircleShape,
-                    color = AzulCielo.copy(alpha = 0.15f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "E",
-                            fontSize = 20.sp,
-                            fontWeight = FontWeight.Black,
-                            color = AzulCielo
+                    color = Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(
+                        4.dp,
+                        Brush.sweepGradient(
+                            colors = listOf(
+                                AzulCielo,
+                                VerdeLima,
+                                Fucsia,
+                                Naranja,
+                                AzulCielo
+                            )
                         )
+                    )
+                ) {}
+
+                // Resplandor intermedio
+                Surface(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = AzulCielo.copy(alpha = glowAlpha * 0.2f)
+                ) {}
+
+                // Logo central - AQUÍ VA TU IMAGEN
+                Surface(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = Blanco,
+                    shadowElevation = 16.dp
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        AzulCielo.copy(alpha = 0.1f),
+                                        Blanco
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // REEMPLAZA ESTO CON TU IMAGEN DEL LOGO
+                        Image(
+                            painter = painterResource(id = R.drawable.edumonavatar1), // <-- PON AQUÍ TU LOGO
+                            contentDescription = "Logo Edumon",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .padding(12.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+
+                // Puntos orbitales
+                for (i in 0..2) {
+                    val orbitRotation by infiniteTransition.animateFloat(
+                        initialValue = i * 120f,
+                        targetValue = i * 120f + 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(3000 + i * 500, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "orbit$i"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .graphicsLayer {
+                                rotationZ = orbitRotation
+                            }
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .offset(y = (-60).dp)
+                                .align(Alignment.TopCenter),
+                            shape = CircleShape,
+                            color = listOf(VerdeLima, Fucsia, Naranja)[i],
+                            shadowElevation = 4.dp
+                        ) {}
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Puntos animados de carga
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0..2) {
+                    val dotScale by infiniteTransition.animateFloat(
+                        initialValue = 0.5f,
+                        targetValue = 1.2f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                600,
+                                easing = FastOutSlowInEasing,
+                                delayMillis = i * 200
+                            ),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "dot$i"
+                    )
+
+                    Surface(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .scale(dotScale),
+                        shape = CircleShape,
+                        color = listOf(AzulCielo, VerdeLima, Fucsia)[i]
+                    ) {}
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             Text(
                 text = "Cargando",
@@ -1570,12 +1724,12 @@ fun ModernLoadingIndicator() {
                 color = AzulCielo
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             Text(
                 text = "Preparando tu experiencia educativa",
                 fontSize = 14.sp,
-                color = Color(0xFF757575),
+                color = GrisNeutral,
                 fontWeight = FontWeight.Medium
             )
         }

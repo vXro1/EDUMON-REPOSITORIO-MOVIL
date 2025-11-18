@@ -20,6 +20,7 @@ espressoCore = "3.7.0"
 appcompat = "1.7.1"
 activity = "1.9.3"
 constraintlayout = "2.2.1"
+firebaseInappmessagingDisplay = "22.0.2"
 
 ##############################
 # 📚 Librerías
@@ -64,6 +65,7 @@ accompanist-permissions = { group = "com.google.accompanist", name = "accompanis
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+firebase-inappmessaging-display = { group = "com.google.firebase", name = "firebase-inappmessaging-display", version.ref = "firebaseInappmessagingDisplay" }
 
 ##############################
 # ⚙️ Plugins

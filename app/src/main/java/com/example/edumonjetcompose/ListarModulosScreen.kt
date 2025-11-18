@@ -358,7 +358,7 @@ fun ListarModulosScreen(
                         val response = ApiService.updateModulo(
                             token = token,
                             moduloId = moduloToEdit!!.id,
-                            nombre = titulo,
+                            titulo = titulo,
                             descripcion = descripcion.ifBlank { null },
                             orden = null
                         )
