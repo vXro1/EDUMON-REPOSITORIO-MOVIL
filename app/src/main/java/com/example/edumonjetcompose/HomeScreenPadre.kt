@@ -18,12 +18,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -33,15 +36,21 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.edumonjetcompose.Fucsia
+import com.example.edumonjetcompose.Naranja
+import com.example.edumonjetcompose.R
+import com.example.edumonjetcompose.VerdeLima
 import com.example.edumonjetcompose.models.AvatarOption
 import com.example.edumonjetcompose.models.CursoItem
 import com.example.edumonjetcompose.models.UserData
 import com.example.edumonjetcompose.network.ApiService
+import com.example.edumonjetcompose.ui.theme.AzulCielo
 import com.example.edumonjetcompose.ui.theme.AzulCieloClaro
 import com.example.edumonjetcompose.ui.theme.Blanco
 import com.example.edumonjetcompose.ui.theme.Celeste
 import com.example.edumonjetcompose.ui.theme.FondoOscuroTerciario
 import com.example.edumonjetcompose.ui.theme.GradienteOcean
+import com.example.edumonjetcompose.ui.theme.GrisNeutral
 import com.google.gson.JsonArray
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -837,59 +846,204 @@ fun EmptyCursosViewImproved() {
         }
     }
 }
-
 @Composable
 fun HomeLoadingView() {
+    val infiniteTransition = rememberInfiniteTransition(label = "modernLoading")
+
+    // Rotación del gradiente circular
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+
+    // Pulsación del logo
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
+    // Alpha del resplandor
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow"
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFFFFFFF)),
+            .background(Blanco),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
         ) {
             Box(
-                modifier = Modifier.size(80.dp),
+                modifier = Modifier.size(120.dp),
                 contentAlignment = Alignment.Center
             ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFF00B9F0),
-                    strokeWidth = 6.dp,
-                    trackColor = Color(0xFF334155)
-                )
-
-                Box(
+                // Anillo exterior rotatorio con gradiente
+                Surface(
                     modifier = Modifier
-                        .size(40.dp)
-                        .background(
-                            Color(0xFF00B9F0).copy(alpha = 0.2f),
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "E",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Black,
-                        color = Color(0xFF00B9F0)
+                        .size(120.dp)
+                        .graphicsLayer {
+                            rotationZ = rotation
+                        },
+                    shape = CircleShape,
+                    color = Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(
+                        4.dp,
+                        Brush.sweepGradient(
+                            colors = listOf(
+                                AzulCielo,
+                                VerdeLima,
+                                Fucsia,
+                                Naranja,
+                                AzulCielo
+                            )
+                        )
                     )
+                ) {}
+
+                // Resplandor intermedio
+                Surface(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = AzulCielo.copy(alpha = glowAlpha * 0.2f)
+                ) {}
+
+                // Logo central - AQUÍ VA TU IMAGEN
+                Surface(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = Blanco,
+                    shadowElevation = 16.dp
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        AzulCielo.copy(alpha = 0.1f),
+                                        Blanco
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // REEMPLAZA ESTO CON TU IMAGEN DEL LOGO
+                        Image(
+                            painter = painterResource(id = R.drawable.edumonavatar1), // <-- PON AQUÍ TU LOGO
+                            contentDescription = "Logo Edumon",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .padding(12.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+
+                // Puntos orbitales
+                for (i in 0..2) {
+                    val orbitRotation by infiniteTransition.animateFloat(
+                        initialValue = i * 120f,
+                        targetValue = i * 120f + 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(3000 + i * 500, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "orbit$i"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .graphicsLayer {
+                                rotationZ = orbitRotation
+                            }
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .offset(y = (-60).dp)
+                                .align(Alignment.TopCenter),
+                            shape = CircleShape,
+                            color = listOf(VerdeLima, Fucsia, Naranja)[i],
+                            shadowElevation = 4.dp
+                        ) {}
+                    }
                 }
             }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Puntos animados de carga
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0..2) {
+                    val dotScale by infiniteTransition.animateFloat(
+                        initialValue = 0.5f,
+                        targetValue = 1.2f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                600,
+                                easing = FastOutSlowInEasing,
+                                delayMillis = i * 200
+                            ),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "dot$i"
+                    )
+
+                    Surface(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .scale(dotScale),
+                        shape = CircleShape,
+                        color = listOf(AzulCielo, VerdeLima, Fucsia)[i]
+                    ) {}
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
 
             Text(
                 text = "Cargando",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.Black
+                color = AzulCielo
             )
 
+            Spacer(modifier = Modifier.height(8.dp))
+
             Text(
-                text = "Preparando tus cursos...",
+                text = "Preparando tu experiencia educativa",
                 fontSize = 14.sp,
-                color = Color(0xFF94A3B8)
+                color = GrisNeutral,
+                fontWeight = FontWeight.Medium
             )
         }
     }

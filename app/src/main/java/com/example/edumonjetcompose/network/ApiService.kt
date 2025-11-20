@@ -327,8 +327,7 @@ object ApiService {
         orden: Int?
     ): Response<JsonObject> {
         val body = JsonObject().apply {
-            titulo?.let { addProperty("nombre", it) }
-            descripcion?.let { addProperty("descripcion", it) }
+            titulo?.let { addProperty("titulo", it) }  // ✅ Consistente con createModulo            descripcion?.let { addProperty("descripcion", it) }
             orden?.let { addProperty("orden", it) }
         }
         return api.updateModulo("Bearer $token", moduloId, body)

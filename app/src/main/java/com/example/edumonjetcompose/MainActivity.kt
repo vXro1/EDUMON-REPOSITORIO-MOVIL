@@ -62,6 +62,7 @@ val Celeste = Color(0xFF01C9F4)
 val Naranja = Color(0xFFFA6D00)
 
 class MainActivity : ComponentActivity() {
+
     @Composable
     fun AppNavigation(
         navController: NavHostController,

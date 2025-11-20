@@ -2,6 +2,8 @@ package com.example.edumonjetcompose.screens.profesor
 
 import android.util.Log
 import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,7 +17,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -76,10 +81,8 @@ fun ParticipantesCursoScreen(
                 val body = response.body()
                 Log.d("ParticipantesCurso", "✅ Respuesta exitosa: ${body.toString()}")
 
-                // Extraer nombre del curso
                 cursoNombre = body?.get("cursoNombre")?.asString ?: "Curso"
 
-                // Extraer participantes
                 val participantesArray = body?.getAsJsonArray("participantes")
                 val listaParticipantes = mutableListOf<Participante>()
 
@@ -87,12 +90,9 @@ fun ParticipantesCursoScreen(
                     try {
                         val pObj = elem.asJsonObject
 
-                        // Procesar foto de perfil
                         val fotoPerfilRaw = pObj.get("fotoPerfilUrl")
                         val fotoPerfilUrl = if (fotoPerfilRaw != null && !fotoPerfilRaw.isJsonNull) {
                             val url = fotoPerfilRaw.asString
-                            // Si la URL ya es completa (http/https), usarla directamente
-                            // Si es una ruta relativa, agregar BASE_URL
                             if (url.startsWith("http://") || url.startsWith("https://")) {
                                 url
                             } else {
@@ -101,8 +101,6 @@ fun ParticipantesCursoScreen(
                         } else {
                             null
                         }
-
-                        Log.d("ParticipantesCurso", "📸 Foto - Raw: $fotoPerfilRaw, Final: $fotoPerfilUrl")
 
                         val participante = Participante(
                             id = pObj.get("_id")?.asString ?: "",
@@ -116,28 +114,17 @@ fun ParticipantesCursoScreen(
                             fotoPerfilUrl = fotoPerfilUrl
                         )
                         listaParticipantes.add(participante)
-
-                        Log.d("ParticipantesCurso", "👤 Participante: ${participante.nombre} ${participante.apellido} - Foto: ${participante.fotoPerfilUrl}")
                     } catch (e: Exception) {
                         Log.e("ParticipantesCurso", "❌ Error parseando participante", e)
                     }
                 }
 
-                // Ordenar: docentes primero, luego padres
                 participantes = listaParticipantes.sortedBy { it.etiqueta != "docente" }
                 Log.d("ParticipantesCurso", "✅ Total participantes cargados: ${participantes.size}")
 
             } else {
                 errorMessage = "Error al cargar participantes: ${response.code()}"
                 Log.e("ParticipantesCurso", "❌ Error HTTP: ${response.code()} - ${response.message()}")
-
-                // Intentar leer el cuerpo del error
-                try {
-                    val errorBody = response.errorBody()?.string()
-                    Log.e("ParticipantesCurso", "❌ Error body: $errorBody")
-                } catch (e: Exception) {
-                    Log.e("ParticipantesCurso", "❌ No se pudo leer error body", e)
-                }
             }
         } catch (e: Exception) {
             errorMessage = "Error de conexión: ${e.message}"
@@ -147,10 +134,7 @@ fun ParticipantesCursoScreen(
         }
     }
 
-    // Cargar datos al inicio
     LaunchedEffect(Unit) {
-        Log.d("ParticipantesCurso", "🔑 Token recibido: ${if (token.isNotEmpty()) "Sí" else "No"}")
-
         if (token.isNotEmpty()) {
             cargarParticipantes()
         } else {
@@ -164,12 +148,17 @@ fun ParticipantesCursoScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Participantes", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                        Text(
+                            "Participantes",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp,
+                            color = Color.White
+                        )
                         if (cursoNombre.isNotEmpty()) {
                             Text(
                                 cursoNombre,
                                 fontSize = 14.sp,
-                                color = GrisMedio,
+                                color = Color.White.copy(alpha = 0.9f),
                                 fontWeight = FontWeight.Normal
                             )
                         }
@@ -177,17 +166,16 @@ fun ParticipantesCursoScreen(
                 },
                 navigationIcon = {
                     IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.Default.ArrowBack, "Volver")
+                        Icon(Icons.Default.ArrowBack, "Volver", tint = Color.White)
                     }
                 },
                 actions = {
                     IconButton(onClick = { showAgregarDialog = true }) {
-                        Icon(Icons.Default.PersonAdd, "Agregar participante", tint = VerdeLima)
+                        Icon(Icons.Default.PersonAdd, "Agregar", tint = Color.White)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = FondoCard,
-                    titleContentColor = GrisOscuro
+                    containerColor = AzulCielo
                 )
             )
         },
@@ -197,7 +185,8 @@ fun ParticipantesCursoScreen(
             FloatingActionButton(
                 onClick = { showAgregarDialog = true },
                 containerColor = VerdeLima,
-                contentColor = Color.White
+                contentColor = Color.White,
+                elevation = FloatingActionButtonDefaults.elevation(8.dp)
             ) {
                 Icon(Icons.Default.Add, "Agregar")
             }
@@ -216,53 +205,59 @@ fun ParticipantesCursoScreen(
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         item {
                             EstadisticasCard(participantes)
-                            Spacer(Modifier.height(8.dp))
                         }
 
-                        // Docentes
                         val docentes = participantes.filter { it.etiqueta == "docente" }
                         if (docentes.isNotEmpty()) {
                             item {
                                 SeccionHeader("Docentes", docentes.size, Icons.Default.School)
                             }
-                            items(docentes) { participante ->
-                                ParticipanteCard(
-                                    participante = participante,
-                                    onInfoClick = {
-                                        participanteToShow = participante
-                                        showInfoDialog = true
-                                    },
-                                    onDeleteClick = {
-                                        participanteToDelete = participante
-                                        showDeleteDialog = true
-                                    }
-                                )
+                            items(docentes, key = { it.id }) { participante ->
+                                AnimatedVisibility(
+                                    visible = true,
+                                    enter = fadeIn() + slideInVertically()
+                                ) {
+                                    ParticipanteCard(
+                                        participante = participante,
+                                        onInfoClick = {
+                                            participanteToShow = participante
+                                            showInfoDialog = true
+                                        },
+                                        onDeleteClick = {
+                                            participanteToDelete = participante
+                                            showDeleteDialog = true
+                                        }
+                                    )
+                                }
                             }
-                            item { Spacer(Modifier.height(8.dp)) }
                         }
 
-                        // Padres
                         val padres = participantes.filter { it.etiqueta == "padre" }
                         if (padres.isNotEmpty()) {
                             item {
                                 SeccionHeader("Padres de Familia", padres.size, Icons.Default.People)
                             }
-                            items(padres) { participante ->
-                                ParticipanteCard(
-                                    participante = participante,
-                                    onInfoClick = {
-                                        participanteToShow = participante
-                                        showInfoDialog = true
-                                    },
-                                    onDeleteClick = {
-                                        participanteToDelete = participante
-                                        showDeleteDialog = true
-                                    }
-                                )
+                            items(padres, key = { it.id }) { participante ->
+                                AnimatedVisibility(
+                                    visible = true,
+                                    enter = fadeIn() + slideInVertically()
+                                ) {
+                                    ParticipanteCard(
+                                        participante = participante,
+                                        onInfoClick = {
+                                            participanteToShow = participante
+                                            showInfoDialog = true
+                                        },
+                                        onDeleteClick = {
+                                            participanteToDelete = participante
+                                            showDeleteDialog = true
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -271,7 +266,6 @@ fun ParticipantesCursoScreen(
                 }
             }
 
-            // Dialog para agregar participante
             if (showAgregarDialog) {
                 AgregarParticipanteDialog(
                     cursoId = cursoId,
@@ -281,13 +275,12 @@ fun ParticipantesCursoScreen(
                         showAgregarDialog = false
                         scope.launch {
                             cargarParticipantes()
-                            snackbarHostState.showSnackbar("Participante agregado exitosamente")
+                            snackbarHostState.showSnackbar("✅ Participante agregado exitosamente")
                         }
                     }
                 )
             }
 
-            // Dialog para confirmar eliminación
             if (showDeleteDialog && participanteToDelete != null) {
                 ConfirmarEliminarDialog(
                     participante = participanteToDelete!!,
@@ -303,13 +296,13 @@ fun ParticipantesCursoScreen(
                                 }
 
                                 if (response.isSuccessful) {
-                                    snackbarHostState.showSnackbar("Participante removido")
+                                    snackbarHostState.showSnackbar("✅ Participante removido")
                                     cargarParticipantes()
                                 } else {
-                                    snackbarHostState.showSnackbar("Error al remover participante")
+                                    snackbarHostState.showSnackbar("❌ Error al remover")
                                 }
                             } catch (e: Exception) {
-                                snackbarHostState.showSnackbar("Error: ${e.message}")
+                                snackbarHostState.showSnackbar("❌ Error: ${e.message}")
                             }
                             showDeleteDialog = false
                             participanteToDelete = null
@@ -318,7 +311,6 @@ fun ParticipantesCursoScreen(
                 )
             }
 
-            // Dialog para mostrar información del participante
             if (showInfoDialog && participanteToShow != null) {
                 InfoParticipanteDialog(
                     participante = participanteToShow!!,
@@ -332,75 +324,156 @@ fun ParticipantesCursoScreen(
     }
 }
 
-// ==================== COMPONENTES UI ====================
+// ==================== COMPONENTES UI MEJORADOS ====================
 
 @Composable
 fun EstadisticasCard(participantes: List<Participante>) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        color = FondoCard,
-        shadowElevation = 4.dp
+        shape = RoundedCornerShape(24.dp),
+        color = Color.White,
+        shadowElevation = 8.dp
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            StatItem(
-                icon = Icons.Default.People,
-                value = participantes.size.toString(),
-                label = "Total",
-                color = AzulCielo
-            )
-            StatItem(
-                icon = Icons.Default.School,
-                value = participantes.count { it.etiqueta == "docente" }.toString(),
-                label = "Docentes",
-                color = Fucsia
-            )
-            StatItem(
-                icon = Icons.Default.Person,
-                value = participantes.count { it.etiqueta == "padre" }.toString(),
-                label = "Padres",
-                color = VerdeLima
-            )
+        Column(modifier = Modifier.padding(24.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(bottom = 20.dp)
+            ) {
+                Icon(
+                    Icons.Default.BarChart,
+                    contentDescription = null,
+                    tint = AzulCielo,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    "Estadísticas del Curso",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = GrisOscuro
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                StatItem(
+                    icon = Icons.Default.Groups,
+                    value = participantes.size.toString(),
+                    label = "Total",
+                    color = AzulCielo,
+                    gradient = Brush.linearGradient(
+                        colors = listOf(AzulCielo.copy(alpha = 0.2f), AzulCielo.copy(alpha = 0.05f))
+                    )
+                )
+                StatItem(
+                    icon = Icons.Default.School,
+                    value = participantes.count { it.etiqueta == "docente" }.toString(),
+                    label = "Docentes",
+                    color = Fucsia,
+                    gradient = Brush.linearGradient(
+                        colors = listOf(Fucsia.copy(alpha = 0.2f), Fucsia.copy(alpha = 0.05f))
+                    )
+                )
+                StatItem(
+                    icon = Icons.Default.FamilyRestroom,
+                    value = participantes.count { it.etiqueta == "padre" }.toString(),
+                    label = "Padres",
+                    color = VerdeLima,
+                    gradient = Brush.linearGradient(
+                        colors = listOf(VerdeLima.copy(alpha = 0.2f), VerdeLima.copy(alpha = 0.05f))
+                    )
+                )
+            }
         }
     }
 }
 
 @Composable
-fun StatItem(icon: ImageVector, value: String, label: String, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+fun StatItem(
+    icon: ImageVector,
+    value: String,
+    label: String,
+    color: Color,
+    gradient: Brush
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         Surface(
-            shape = CircleShape,
-            color = color.copy(alpha = 0.15f),
-            modifier = Modifier.size(56.dp)
+            shape = RoundedCornerShape(16.dp),
+            color = Color.Transparent,
+            modifier = Modifier.size(70.dp)
         ) {
-            Icon(icon, null, modifier = Modifier.padding(14.dp), tint = color)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(gradient),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = GrisOscuro)
-        Text(label, fontSize = 12.sp, color = GrisMedio)
+        Text(
+            value,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = color
+        )
+        Text(
+            label,
+            fontSize = 13.sp,
+            color = GrisMedio,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
 @Composable
 fun SeccionHeader(titulo: String, cantidad: Int, icon: ImageVector) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = AzulCielo.copy(alpha = 0.08f)
     ) {
-        Surface(
-            shape = CircleShape,
-            color = AzulCielo.copy(alpha = 0.15f),
-            modifier = Modifier.size(40.dp)
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Icon(icon, null, modifier = Modifier.padding(10.dp), tint = AzulCielo)
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(titulo, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = GrisOscuro)
-            Text("$cantidad participante${if (cantidad != 1) "s" else ""}", fontSize = 13.sp, color = GrisMedio)
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = AzulCielo.copy(alpha = 0.15f),
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.padding(12.dp),
+                    tint = AzulCielo
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    titulo,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = GrisOscuro
+                )
+                Text(
+                    "$cantidad participante${if (cantidad != 1) "s" else ""}",
+                    fontSize = 14.sp,
+                    color = GrisMedio,
+                    fontWeight = FontWeight.Medium
+                )
+            }
         }
     }
 }
@@ -417,74 +490,149 @@ fun ParticipanteCard(
         else -> GrisMedio
     }
 
+    val tagText = when (participante.etiqueta) {
+        "docente" -> "Docente"
+        "padre" -> "Padre de Familia"
+        else -> participante.etiqueta
+    }
+
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 0.98f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+    )
+
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = FondoCard,
-        shadowElevation = 2.dp
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale),
+        shape = RoundedCornerShape(20.dp),
+        color = Color.White,
+        shadowElevation = 4.dp
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier.padding(20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Avatar con AsyncImage de Coil
-            if (!participante.fotoPerfilUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = participante.fotoPerfilUrl,
-                    contentDescription = "Avatar de ${participante.nombre}",
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(GrisExtraClaro),
-                    contentScale = ContentScale.Crop,
-                    error = painterResource(android.R.drawable.ic_menu_report_image),
-                    placeholder = painterResource(android.R.drawable.ic_menu_report_image)
-                )
-            } else {
+            // Avatar mejorado
+            Box {
+                if (!participante.fotoPerfilUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = participante.fotoPerfilUrl,
+                        contentDescription = "Avatar",
+                        modifier = Modifier
+                            .size(68.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(
+                                Brush.linearGradient(
+                                    colors = listOf(colorTag.copy(0.2f), colorTag.copy(0.05f))
+                                )
+                            )
+                            .border(
+                                width = 2.dp,
+                                brush = Brush.linearGradient(
+                                    colors = listOf(colorTag.copy(0.5f), colorTag.copy(0.2f))
+                                ),
+                                shape = RoundedCornerShape(18.dp)
+                            ),
+                        contentScale = ContentScale.Crop,
+                        error = painterResource(android.R.drawable.ic_menu_report_image),
+                        placeholder = painterResource(android.R.drawable.ic_menu_report_image)
+                    )
+                } else {
+                    Surface(
+                        modifier = Modifier.size(68.dp),
+                        shape = RoundedCornerShape(18.dp),
+                        color = Color.Transparent
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(colorTag.copy(0.2f), colorTag.copy(0.05f))
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Default.Person,
+                                contentDescription = null,
+                                modifier = Modifier.size(32.dp),
+                                tint = colorTag
+                            )
+                        }
+                    }
+                }
+
+                // Badge de rol
                 Surface(
-                    modifier = Modifier.size(56.dp),
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = 4.dp, y = 4.dp),
                     shape = CircleShape,
-                    color = colorTag.copy(alpha = 0.15f)
+                    color = colorTag,
+                    shadowElevation = 4.dp
                 ) {
                     Icon(
-                        Icons.Default.Person,
-                        null,
-                        modifier = Modifier.padding(14.dp),
-                        tint = colorTag
+                        if (participante.etiqueta == "docente") Icons.Default.School else Icons.Default.FamilyRestroom,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .padding(4.dp),
+                        tint = Color.White
                     )
                 }
             }
 
-            // Info
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "${participante.nombre} ${participante.apellido}",
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = GrisOscuro,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = colorTag.copy(alpha = 0.15f)
+            // Info mejorada
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "${participante.nombre} ${participante.apellido}",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = GrisOscuro,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = colorTag.copy(alpha = 0.12f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(colorTag, CircleShape)
+                        )
                         Text(
-                            participante.etiqueta.uppercase(),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
+                            tagText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
                             color = colorTag
                         )
                     }
                 }
 
-                Spacer(Modifier.height(4.dp))
-
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Default.Email, null, modifier = Modifier.size(14.dp), tint = GrisMedio)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Email,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = GrisMedio
+                    )
                     Text(
                         participante.correo,
                         fontSize = 13.sp,
@@ -495,41 +643,54 @@ fun ParticipanteCard(
                 }
 
                 if (!participante.telefono.isNullOrBlank()) {
-                    Spacer(Modifier.height(2.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Default.Phone, null, modifier = Modifier.size(14.dp), tint = GrisMedio)
-                        Text(participante.telefono, fontSize = 13.sp, color = GrisMedio)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Phone,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = GrisMedio
+                        )
+                        Text(
+                            participante.telefono,
+                            fontSize = 13.sp,
+                            color = GrisMedio
+                        )
                     }
                 }
             }
 
-            // Acciones
+            // Botones de acción mejorados
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                IconButton(
+                Surface(
                     onClick = onInfoClick,
-                    modifier = Modifier.size(36.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    color = AzulCielo.copy(alpha = 0.12f),
+                    modifier = Modifier.size(42.dp)
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = AzulCielo.copy(alpha = 0.15f),
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.Info, null, modifier = Modifier.padding(8.dp), tint = AzulCielo)
-                    }
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = "Info",
+                        modifier = Modifier.padding(10.dp),
+                        tint = AzulCielo
+                    )
                 }
 
                 if (participante.etiqueta != "docente") {
-                    IconButton(
+                    Surface(
                         onClick = onDeleteClick,
-                        modifier = Modifier.size(36.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        color = ErrorOscuro.copy(alpha = 0.12f),
+                        modifier = Modifier.size(42.dp)
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = ErrorOscuro.copy(alpha = 0.15f),
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.Delete, null, modifier = Modifier.padding(8.dp), tint = ErrorOscuro)
-                        }
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Eliminar",
+                            modifier = Modifier.padding(10.dp),
+                            tint = ErrorOscuro
+                        )
                     }
                 }
             }
@@ -555,19 +716,51 @@ fun AgregarParticipanteDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = FondoCard,
-            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            shape = RoundedCornerShape(28.dp),
+            color = Color.White,
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
         ) {
-            Column(modifier = Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Column(
+                modifier = Modifier.padding(28.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                // Header mejorado
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
-                        Text("Agregar Padre", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = GrisOscuro)
-                        Text("Completa los datos del nuevo participante", fontSize = 13.sp, color = GrisMedio)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = VerdeLima.copy(alpha = 0.15f),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.PersonAdd,
+                                contentDescription = null,
+                                modifier = Modifier.padding(12.dp),
+                                tint = VerdeLima
+                            )
+                        }
+                        Column {
+                            Text(
+                                "Nuevo Participante",
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = GrisOscuro
+                            )
+                            Text(
+                                "Agrega un padre de familia",
+                                fontSize = 13.sp,
+                                color = GrisMedio
+                            )
+                        }
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(Icons.Default.Close, "Cerrar", tint = GrisMedio)
@@ -577,16 +770,21 @@ fun AgregarParticipanteDialog(
                 if (errorMsg != null) {
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(14.dp),
                         color = ErrorClaro
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Warning, null, tint = ErrorOscuro, modifier = Modifier.size(20.dp))
-                            Text(errorMsg!!, fontSize = 13.sp, color = ErrorOscuro)
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = ErrorOscuro,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(errorMsg!!, fontSize = 14.sp, color = ErrorOscuro)
                         }
                     }
                 }
@@ -594,70 +792,75 @@ fun AgregarParticipanteDialog(
                 OutlinedTextField(
                     value = nombre,
                     onValueChange = { nombre = it },
-                    label = { Text("Nombre *") },
+                    label = { Text("Nombre") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Person, null) },
+                    leadingIcon = { Icon(Icons.Default.Person, null, tint = VerdeLima) },
+                    shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AzulCielo,
-                        focusedLabelColor = AzulCielo
+                        focusedBorderColor = VerdeLima,
+                        focusedLabelColor = VerdeLima,
+                        cursorColor = VerdeLima
                     )
                 )
 
                 OutlinedTextField(
                     value = apellido,
                     onValueChange = { apellido = it },
-                    label = { Text("Apellido *") },
+                    label = { Text("Apellido") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Person, null) },
+                    leadingIcon = { Icon(Icons.Default.Person, null, tint = VerdeLima) },
+                    shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AzulCielo,
-                        focusedLabelColor = AzulCielo
+                        focusedBorderColor = VerdeLima,
+                        focusedLabelColor = VerdeLima,
+                        cursorColor = VerdeLima
                     )
                 )
 
                 OutlinedTextField(
                     value = cedula,
                     onValueChange = { cedula = it },
-                    label = { Text("Cédula *") },
+                    label = { Text("Cédula") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Badge, null) },
+                    leadingIcon = { Icon(Icons.Default.Badge, null, tint = VerdeLima) },
+                    shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AzulCielo,
-                        focusedLabelColor = AzulCielo
+                        focusedBorderColor = VerdeLima,
+                        focusedLabelColor = VerdeLima,
+                        cursorColor = VerdeLima
                     )
                 )
 
                 OutlinedTextField(
                     value = telefono,
                     onValueChange = { telefono = it },
-                    label = { Text("Teléfono *") },
+                    label = { Text("Teléfono") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    leadingIcon = { Icon(Icons.Default.Phone, null) },
+                    leadingIcon = { Icon(Icons.Default.Phone, null, tint = VerdeLima) },
                     placeholder = { Text("+57 300 123 4567") },
+                    shape = RoundedCornerShape(14.dp),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = AzulCielo,
-                        focusedLabelColor = AzulCielo
+                        focusedBorderColor = VerdeLima,
+                        focusedLabelColor = VerdeLima,
+                        cursorColor = VerdeLima
                     )
                 )
 
-                Text(
-                    "* Campos obligatorios",
-                    fontSize = 12.sp,
-                    color = GrisMedio,
-                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                )
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     OutlinedButton(
                         onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                        enabled = !isLoading
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        enabled = !isLoading,
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("Cancelar")
+                        Text("Cancelar", fontWeight = FontWeight.SemiBold)
                     }
 
                     Button(
@@ -665,7 +868,7 @@ fun AgregarParticipanteDialog(
                             errorMsg = null
 
                             if (nombre.isBlank() || apellido.isBlank() || cedula.isBlank() || telefono.isBlank()) {
-                                errorMsg = "Completa todos los campos obligatorios"
+                                errorMsg = "Todos los campos son obligatorios"
                                 return@Button
                             }
 
@@ -685,35 +888,37 @@ fun AgregarParticipanteDialog(
                                     }
 
                                     if (response.isSuccessful) {
-                                        withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "Participante agregado exitosamente", Toast.LENGTH_SHORT).show()
-                                        }
                                         onSuccess()
                                     } else {
                                         val errorBody = response.errorBody()?.string()
-                                        errorMsg = "Error: ${response.code()} - ${errorBody ?: "Error desconocido"}"
-                                        Log.e("ParticipantesDialog", "Error: ${errorMsg}")
+                                        errorMsg = errorBody ?: "Error desconocido"
                                     }
                                 } catch (e: Exception) {
-                                    errorMsg = "Error: ${e.message}"
-                                    Log.e("ParticipantesDialog", "Excepción", e)
+                                    errorMsg = e.message
                                 } finally {
                                     isLoading = false
                                 }
                             }
                         },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).height(52.dp),
                         enabled = !isLoading,
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = VerdeLima)
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(24.dp),
                                 color = Color.White,
                                 strokeWidth = 2.dp
                             )
                         } else {
-                            Text("Agregar")
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Check, null, modifier = Modifier.size(20.dp))
+                                Text("Agregar", fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -728,27 +933,101 @@ fun ConfirmarEliminarDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Warning, null, tint = Advertencia, modifier = Modifier.size(48.dp)) },
-        title = { Text("Remover participante", fontWeight = FontWeight.Bold) },
-        text = {
-            Text("¿Estás seguro de remover a ${participante.nombre} ${participante.apellido} del curso?")
-        },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = ErrorOscuro)
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = Color.White
+        ) {
+            Column(
+                modifier = Modifier.padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                Text("Remover")
-            }
-        },
-        dismissButton = {
-            OutlinedButton(onClick = onDismiss) {
-                Text("Cancelar")
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = ErrorOscuro.copy(alpha = 0.1f),
+                    modifier = Modifier.size(80.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.padding(20.dp),
+                        tint = ErrorOscuro
+                    )
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "¿Remover Participante?",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = GrisOscuro,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        "Esta acción no se puede deshacer",
+                        fontSize = 14.sp,
+                        color = GrisMedio,
+                        textAlign = TextAlign.Center
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = GrisExtraClaro,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            "${participante.nombre} ${participante.apellido}",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = GrisOscuro
+                        )
+                        Text(
+                            participante.correo,
+                            fontSize = 14.sp,
+                            color = GrisMedio
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Cancelar", fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ErrorOscuro)
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(20.dp))
+                            Text("Remover", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
             }
         }
-    )
+    }
 }
 
 @Composable
@@ -762,24 +1041,34 @@ fun InfoParticipanteDialog(
         else -> GrisMedio
     }
 
+    val tagText = when (participante.etiqueta) {
+        "docente" -> "Docente"
+        "padre" -> "Padre de Familia"
+        else -> participante.etiqueta
+    }
+
     Dialog(onDismissRequest = onDismiss) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
-            color = FondoCard,
-            modifier = Modifier.fillMaxWidth()
+            shape = RoundedCornerShape(28.dp),
+            color = Color.White,
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
         ) {
             Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(28.dp)
             ) {
-                // Header con botón cerrar
+                // Header
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "Información del Participante",
+                        "Información Completa",
                         fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
                         color = GrisOscuro
@@ -789,69 +1078,139 @@ fun InfoParticipanteDialog(
                     }
                 }
 
-                // Avatar y nombre
+                Spacer(Modifier.height(24.dp))
+
+                // Avatar y nombre mejorados
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (!participante.fotoPerfilUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = participante.fotoPerfilUrl,
-                            contentDescription = "Avatar de ${participante.nombre}",
-                            modifier = Modifier
-                                .size(100.dp)
-                                .clip(CircleShape)
-                                .background(GrisExtraClaro),
-                            contentScale = ContentScale.Crop,
-                            error = painterResource(android.R.drawable.ic_menu_report_image),
-                            placeholder = painterResource(android.R.drawable.ic_menu_report_image)
-                        )
-                    } else {
+                    Box(contentAlignment = Alignment.BottomEnd) {
+                        if (!participante.fotoPerfilUrl.isNullOrBlank()) {
+                            AsyncImage(
+                                model = participante.fotoPerfilUrl,
+                                contentDescription = "Avatar",
+                                modifier = Modifier
+                                    .size(120.dp)
+                                    .clip(RoundedCornerShape(30.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            colors = listOf(
+                                                colorTag.copy(0.2f),
+                                                colorTag.copy(0.05f)
+                                            )
+                                        )
+                                    )
+                                    .border(
+                                        width = 3.dp,
+                                        brush = Brush.linearGradient(
+                                            colors = listOf(
+                                                colorTag.copy(0.5f),
+                                                colorTag.copy(0.2f)
+                                            )
+                                        ),
+                                        shape = RoundedCornerShape(30.dp)
+                                    ),
+                                contentScale = ContentScale.Crop,
+                                error = painterResource(android.R.drawable.ic_menu_report_image),
+                                placeholder = painterResource(android.R.drawable.ic_menu_report_image)
+                            )
+                        } else {
+                            Surface(
+                                modifier = Modifier.size(120.dp),
+                                shape = RoundedCornerShape(30.dp),
+                                color = Color.Transparent
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.linearGradient(
+                                                colors = listOf(
+                                                    colorTag.copy(0.2f),
+                                                    colorTag.copy(0.05f)
+                                                )
+                                            )
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Person,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(50.dp),
+                                        tint = colorTag
+                                    )
+                                }
+                            }
+                        }
+
                         Surface(
-                            modifier = Modifier.size(100.dp),
                             shape = CircleShape,
-                            color = colorTag.copy(alpha = 0.15f)
+                            color = colorTag,
+                            shadowElevation = 4.dp,
+                            modifier = Modifier
+                                .size(36.dp)
+                                .offset(x = 4.dp, y = 4.dp)
                         ) {
                             Icon(
-                                Icons.Default.Person,
-                                null,
-                                modifier = Modifier.padding(24.dp),
-                                tint = colorTag
+                                if (participante.etiqueta == "docente") Icons.Default.School else Icons.Default.FamilyRestroom,
+                                contentDescription = null,
+                                modifier = Modifier.padding(8.dp),
+                                tint = Color.White
                             )
                         }
                     }
 
-                    Text(
-                        "${participante.nombre} ${participante.apellido}",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = GrisOscuro,
-                        textAlign = TextAlign.Center
-                    )
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = colorTag.copy(alpha = 0.15f)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            participante.etiqueta.uppercase(),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            fontSize = 12.sp,
+                            "${participante.nombre} ${participante.apellido}",
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
-                            color = colorTag
+                            color = GrisOscuro,
+                            textAlign = TextAlign.Center
                         )
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = colorTag.copy(alpha = 0.12f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(8.dp)
+                                        .background(colorTag, CircleShape)
+                                )
+                                Text(
+                                    tagText,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colorTag
+                                )
+                            }
+                        }
                     }
                 }
 
+                Spacer(Modifier.height(24.dp))
+
                 HorizontalDivider(color = GrisClaro)
+
+                Spacer(Modifier.height(20.dp))
 
                 // Información detallada
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     InfoRow(
-                        icon = Icons.Default.Badge,
-                        label = "ID",
-                        value = participante.id,
+                        icon = Icons.Default.Fingerprint,
+                        label = "ID de Usuario",
+                        value = participante.id.takeLast(12) + "...",
                         color = AzulCielo
                     )
 
@@ -866,7 +1225,7 @@ fun InfoParticipanteDialog(
 
                     InfoRow(
                         icon = Icons.Default.Email,
-                        label = "Correo",
+                        label = "Correo Electrónico",
                         value = participante.correo,
                         color = VerdeLima
                     )
@@ -881,20 +1240,22 @@ fun InfoParticipanteDialog(
                     }
 
                     InfoRow(
-                        icon = Icons.Default.Assignment,
-                        label = "Rol",
-                        value = participante.rol.uppercase(),
+                        icon = Icons.Default.WorkspacePremium,
+                        label = "Rol en el Sistema",
+                        value = participante.rol.replaceFirstChar { it.uppercase() },
                         color = colorTag
                     )
                 }
 
-                // Botón cerrar
+                Spacer(Modifier.height(24.dp))
+
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = AzulCielo)
                 ) {
-                    Text("Cerrar")
+                    Text("Cerrar", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
             }
         }
@@ -910,18 +1271,18 @@ fun InfoRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Surface(
-            shape = CircleShape,
-            color = color.copy(alpha = 0.15f),
-            modifier = Modifier.size(40.dp)
+            shape = RoundedCornerShape(14.dp),
+            color = color.copy(alpha = 0.12f),
+            modifier = Modifier.size(48.dp)
         ) {
             Icon(
                 icon,
-                null,
-                modifier = Modifier.padding(10.dp),
+                contentDescription = null,
+                modifier = Modifier.padding(12.dp),
                 tint = color
             )
         }
@@ -933,9 +1294,10 @@ fun InfoRow(
                 color = GrisMedio,
                 fontWeight = FontWeight.Medium
             )
+            Spacer(Modifier.height(4.dp))
             Text(
                 value,
-                fontSize = 15.sp,
+                fontSize = 16.sp,
                 color = GrisOscuro,
                 fontWeight = FontWeight.SemiBold
             )
@@ -945,54 +1307,329 @@ fun InfoRow(
 
 @Composable
 fun EmptyParticipantesView() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(32.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.padding(40.dp)
         ) {
             Surface(
-                shape = CircleShape,
-                color = GrisMedio.copy(alpha = 0.15f),
-                modifier = Modifier.size(100.dp)
+                shape = RoundedCornerShape(30.dp),
+                color = AzulCielo.copy(alpha = 0.1f),
+                modifier = Modifier.size(120.dp)
             ) {
-                Icon(Icons.Default.People, null, modifier = Modifier.padding(24.dp), tint = GrisMedio)
+                Icon(
+                    Icons.Default.Groups,
+                    contentDescription = null,
+                    modifier = Modifier.padding(30.dp),
+                    tint = AzulCielo
+                )
             }
-            Text("Sin participantes", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = GrisOscuro)
-            Text("Agrega participantes para comenzar", fontSize = 14.sp, color = GrisMedio, textAlign = TextAlign.Center)
+            Text(
+                "Sin Participantes",
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                color = GrisOscuro
+            )
+            Text(
+                "Agrega el primer participante\npresionando el botón +",
+                fontSize = 15.sp,
+                color = GrisMedio,
+                textAlign = TextAlign.Center,
+                lineHeight = 22.sp
+            )
         }
     }
 }
 
 @Composable
 fun ParticipantesLoadingView() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    val infiniteTransition = rememberInfiniteTransition(label = "modernLoading")
+
+    // Rotación del gradiente circular
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+
+    // Pulsación del logo
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
+    // Alpha del resplandor
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(FondoClaro),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
         ) {
-            CircularProgressIndicator(modifier = Modifier.size(48.dp), color = AzulCielo)
-            Text("Cargando participantes...", fontSize = 16.sp, color = GrisMedio)
+            Box(
+                modifier = Modifier.size(140.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                // Anillo exterior rotatorio con gradiente
+                Surface(
+                    modifier = Modifier
+                        .size(140.dp)
+                        .graphicsLayer {
+                            rotationZ = rotation
+                        },
+                    shape = CircleShape,
+                    color = Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(
+                        4.dp,
+                        Brush.sweepGradient(
+                            colors = listOf(
+                                AzulCielo,
+                                VerdeLima,
+                                Fucsia,
+                                Naranja,
+                                AzulCielo
+                            )
+                        )
+                    )
+                ) {}
+
+                // Resplandor intermedio
+                Surface(
+                    modifier = Modifier
+                        .size(110.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = AzulCielo.copy(alpha = glowAlpha * 0.2f)
+                ) {}
+
+                // Logo central
+                Surface(
+                    modifier = Modifier
+                        .size(90.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = Color.White,
+                    shadowElevation = 16.dp
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        AzulCielo.copy(alpha = 0.1f),
+                                        Color.White
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            Icons.Default.Groups,
+                            contentDescription = null,
+                            modifier = Modifier.size(50.dp),
+                            tint = AzulCielo
+                        )
+                    }
+                }
+
+                // Puntos orbitales
+                for (i in 0..2) {
+                    val orbitRotation by infiniteTransition.animateFloat(
+                        initialValue = i * 120f,
+                        targetValue = i * 120f + 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(3000 + i * 500, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "orbit$i"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(140.dp)
+                            .graphicsLayer {
+                                rotationZ = orbitRotation
+                            }
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .offset(y = (-70).dp)
+                                .align(Alignment.TopCenter),
+                            shape = CircleShape,
+                            color = listOf(VerdeLima, Fucsia, Naranja)[i],
+                            shadowElevation = 4.dp
+                        ) {}
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Puntos animados de carga
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0..2) {
+                    val dotScale by infiniteTransition.animateFloat(
+                        initialValue = 0.5f,
+                        targetValue = 1.2f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                600,
+                                easing = FastOutSlowInEasing,
+                                delayMillis = i * 200
+                            ),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "dot$i"
+                    )
+
+                    Surface(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .scale(dotScale),
+                        shape = CircleShape,
+                        color = listOf(AzulCielo, VerdeLima, Fucsia)[i]
+                    ) {}
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Cargando Participantes",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = AzulCielo
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Obteniendo información del curso",
+                fontSize = 15.sp,
+                color = GrisMedio,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }
 
 @Composable
-fun ParticipantesErrorView(message: String, onRetry: () -> Unit, onBack: () -> Unit) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+fun ParticipantesErrorView(
+    message: String,
+    onRetry: () -> Unit,
+    onBack: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(32.dp)
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+            modifier = Modifier.padding(40.dp)
         ) {
-            Icon(Icons.Default.Error, null, modifier = Modifier.size(64.dp), tint = ErrorOscuro)
-            Text(message, fontSize = 16.sp, color = GrisOscuro, textAlign = TextAlign.Center)
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onBack) {
-                    Text("Volver")
+            Surface(
+                shape = RoundedCornerShape(30.dp),
+                color = ErrorOscuro.copy(alpha = 0.1f),
+                modifier = Modifier.size(100.dp)
+            ) {
+                Icon(
+                    Icons.Default.ErrorOutline,
+                    contentDescription = null,
+                    modifier = Modifier.padding(25.dp),
+                    tint = ErrorOscuro
+                )
+            }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Error al Cargar",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = GrisOscuro
+                )
+                Text(
+                    message,
+                    fontSize = 14.sp,
+                    color = GrisMedio,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onBack,
+                    modifier = Modifier.height(48.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text("Volver", fontWeight = FontWeight.SemiBold)
+                    }
                 }
-                Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = AzulCielo)) {
-                    Text("Reintentar")
+
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AzulCielo)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text("Reintentar", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }

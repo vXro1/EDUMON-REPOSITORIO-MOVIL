@@ -1,4 +1,11 @@
 package com.example.edumonjetcompose.ui
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -10,16 +17,22 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -27,36 +40,44 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.edumonjetcompose.Fucsia
+import com.example.edumonjetcompose.Naranja
+import com.example.edumonjetcompose.R
+import com.example.edumonjetcompose.VerdeLima
 import com.example.edumonjetcompose.models.*
 import com.example.edumonjetcompose.network.ApiService
+import com.example.edumonjetcompose.ui.theme.AzulCielo
+import com.example.edumonjetcompose.ui.theme.Blanco
+import com.example.edumonjetcompose.ui.theme.GrisNeutral
 import com.google.gson.JsonArray
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.Date
-// Colores del tema claro mejorado
- val AzulCielo = Color(0xFF42A5F5)
- val AzulCieloClaro = Color(0xFF90CAF9)
- val AzulCieloMuyClaro = Color(0xFFE3F2FD)
- val AzulOscuro = Color(0xFF1976D2)
- val Fucsia = Color(0xFFEC407A)
- val FucsiaClaro = Color(0xFFF48FB1)
- val VerdeLima = Color(0xFF66BB6A)
- val VerdeLimaClaro = Color(0xFFA5D6A7)
- val FondoClaro = Color(0xFFF8F9FA)
- val FondoCard = Color(0xFFFFFFFF)
- val FondoSecundario = Color(0xFFF5F7FA)
- val GrisOscuro = Color(0xFF212121)
- val GrisMedio = Color(0xFF757575)
- val GrisClaro = Color(0xFFE0E0E0)
- val GrisExtraClaro = Color(0xFFF5F5F5)
- val Error = Color(0xFFEF5350)
- val ErrorClaro = Color(0xFFFFEBEE)
- val ErrorOscuro = Color(0xFFC62828)
- val Exito = Color(0xFF66BB6A)
- val ExitoClaro = Color(0xFFE8F5E9)
- val Advertencia = Color(0xFFFF9800)
- val AdvertenciaClaro = Color(0xFFFFF3E0)
+
+// Colores del tema
+val AzulCielo = Color(0xFF42A5F5)
+val AzulCieloClaro = Color(0xFF90CAF9)
+val AzulCieloMuyClaro = Color(0xFFE3F2FD)
+val AzulOscuro = Color(0xFF1976D2)
+val Fucsia = Color(0xFFEC407A)
+val FucsiaClaro = Color(0xFFF48FB1)
+val VerdeLima = Color(0xFF66BB6A)
+val VerdeLimaClaro = Color(0xFFA5D6A7)
+val FondoClaro = Color(0xFFF8F9FA)
+val FondoCard = Color(0xFFFFFFFF)
+val FondoSecundario = Color(0xFFF5F7FA)
+val GrisOscuro = Color(0xFF212121)
+val GrisMedio = Color(0xFF757575)
+val GrisClaro = Color(0xFFE0E0E0)
+val GrisExtraClaro = Color(0xFFF5F5F5)
+val Error = Color(0xFFEF5350)
+val ErrorClaro = Color(0xFFFFEBEE)
+val ErrorOscuro = Color(0xFFC62828)
+val Exito = Color(0xFF66BB6A)
+val ExitoClaro = Color(0xFFE8F5E9)
+val Advertencia = Color(0xFFFF9800)
+val AdvertenciaClaro = Color(0xFFFFF3E0)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,7 +161,6 @@ fun InfoCursoScreen(
                         for (tElem in tareasJson) {
                             val t = tElem.asJsonObject
 
-                            // Extraer moduloId de la tarea de forma más robusta
                             val tareaModuloId = when {
                                 t.has("moduloId") && !t.get("moduloId").isJsonNull -> {
                                     when {
@@ -152,7 +172,6 @@ fun InfoCursoScreen(
                                 else -> null
                             }
 
-                            // Comparar IDs
                             if (tareaModuloId == moduloId) {
                                 val fechaEntrega = t.get("fechaLimite")?.asString ?: t.get("fechaEntrega")?.asString ?: ""
                                 val estadoTarea = t.get("estado")?.asString ?: "publicada"
@@ -174,7 +193,7 @@ fun InfoCursoScreen(
                         modulosList.add(
                             ModuloConTareas(
                                 id = moduloId,
-                                nombre = m.get("nombre")?.asString ?: "Sin nombre",
+                                nombre = m.get("titulo")?.asString ?: m.get("nombre")?.asString ?: "Sin nombre",
                                 tareas = tareasModulo
                             )
                         )
@@ -205,7 +224,8 @@ fun InfoCursoScreen(
                 title = {
                     Text(
                         "Información del Curso",
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
                     )
                 },
                 navigationIcon = {
@@ -279,11 +299,11 @@ fun InfoCursoScreen(
                             1 -> {
                                 // Foro
                                 item {
-                                    Spacer(Modifier.height(16.dp))
+                                    Spacer(Modifier.height(12.dp))
                                     NavigationFeatureCard(
                                         icon = Icons.Default.Forum,
                                         titulo = "Foro del Curso",
-                                        descripcion = "Participa en discusiones, comparte ideas y colabora con tus compañeros y docentes en un espacio diseñado para el aprendizaje interactivo.",
+                                        descripcion = "Participa en discusiones, comparte ideas y colabora con tus compañeros y docentes.",
                                         buttonText = "Acceder al Foro",
                                         gradientColors = listOf(
                                             Color(0xFF667EEA),
@@ -298,11 +318,11 @@ fun InfoCursoScreen(
                             2 -> {
                                 // Calendario
                                 item {
-                                    Spacer(Modifier.height(16.dp))
+                                    Spacer(Modifier.height(12.dp))
                                     NavigationFeatureCard(
                                         icon = Icons.Default.CalendarMonth,
                                         titulo = "Calendario del Curso",
-                                        descripcion = "Visualiza todas las fechas importantes, entregas programadas y eventos del curso en un solo lugar. Mantente organizado y nunca pierdas una fecha límite.",
+                                        descripcion = "Visualiza todas las fechas importantes, entregas programadas y eventos del curso en un solo lugar.",
                                         buttonText = "Ver Calendario",
                                         gradientColors = listOf(
                                             Color(0xFFf093fb),
@@ -318,7 +338,7 @@ fun InfoCursoScreen(
 
                         // Espaciado final
                         item {
-                            Spacer(Modifier.height(24.dp))
+                            Spacer(Modifier.height(16.dp))
                         }
                     }
                 }
@@ -332,14 +352,18 @@ fun CursoHeaderMejorado(
     curso: CursoDetalle,
     modulos: List<ModuloConTareas>
 ) {
+    val configuration = LocalConfiguration.current
+    val screenWidth = configuration.screenWidthDp.dp
+    val isSmallScreen = screenWidth < 360.dp
+
     Column {
-        // Header con fondo azul claro y avatar del maestro
+        // Header con diseño responsivo
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(280.dp)
+                .height(if (isSmallScreen) 240.dp else 260.dp)
         ) {
-            // Fondo azul claro con gradiente
+            // Fondo con degradado
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -353,7 +377,7 @@ fun CursoHeaderMejorado(
                     )
             )
 
-            // Imagen de portada con overlay
+            // Imagen de portada
             if (curso.fotoPortadaUrl != null) {
                 AsyncImage(
                     model = curso.fotoPortadaUrl,
@@ -365,7 +389,7 @@ fun CursoHeaderMejorado(
                 )
             }
 
-            // Overlay para mejor legibilidad
+            // Overlay
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -374,45 +398,47 @@ fun CursoHeaderMejorado(
                             colors = listOf(
                                 Color.Transparent,
                                 AzulCielo.copy(alpha = 0.8f)
-                            ),
-                            startY = 0f,
-                            endY = 900f
+                            )
                         )
                     )
             )
 
-            // Contenido del header
+            // Contenido
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(24.dp),
+                    .padding(
+                        horizontal = if (isSmallScreen) 16.dp else 20.dp,
+                        vertical = if (isSmallScreen) 16.dp else 20.dp
+                    ),
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(if (isSmallScreen) 8.dp else 12.dp))
 
-                // Título del curso
+                // Título
                 Text(
                     text = curso.nombre,
                     style = MaterialTheme.typography.headlineLarge.copy(
-                        fontSize = 32.sp,
-                        lineHeight = 38.sp
+                        fontSize = if (isSmallScreen) 22.sp else 28.sp,
+                        lineHeight = if (isSmallScreen) 28.sp else 34.sp
                     ),
                     fontWeight = FontWeight.ExtraBold,
                     color = Color.White,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(bottom = if (isSmallScreen) 8.dp else 12.dp)
                 )
 
-                // Información del docente con avatar
+                // Info del docente
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 10.dp else 12.dp)
                 ) {
-                    // Avatar del docente
                     Box(
                         modifier = Modifier
-                            .size(64.dp)
-                            .shadow(8.dp, CircleShape)
+                            .size(if (isSmallScreen) 48.dp else 56.dp)
+                            .shadow(if (isSmallScreen) 4.dp else 6.dp, CircleShape)
                     ) {
                         if (curso.docenteFotoUrl != null) {
                             AsyncImage(
@@ -421,7 +447,11 @@ fun CursoHeaderMejorado(
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .clip(CircleShape)
-                                    .border(3.dp, Color.White, CircleShape),
+                                    .border(
+                                        width = if (isSmallScreen) 1.5.dp else 2.dp,
+                                        color = Color.White,
+                                        shape = CircleShape
+                                    ),
                                 contentScale = ContentScale.Crop
                             )
                         } else {
@@ -429,92 +459,81 @@ fun CursoHeaderMejorado(
                                 modifier = Modifier.fillMaxSize(),
                                 shape = CircleShape,
                                 color = Color.White,
-                                border = BorderStroke(3.dp, Color.White)
+                                border = BorderStroke(
+                                    width = if (isSmallScreen) 1.5.dp else 2.dp,
+                                    color = Color.White
+                                )
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Person,
                                     contentDescription = null,
-                                    modifier = Modifier.padding(14.dp),
+                                    modifier = Modifier.padding(if (isSmallScreen) 10.dp else 12.dp),
                                     tint = AzulCielo
                                 )
                             }
                         }
                     }
 
-                    // Nombre del docente
                     Column {
                         Text(
                             text = "Docente",
                             style = MaterialTheme.typography.labelMedium.copy(
-                                fontSize = 12.sp
+                                fontSize = if (isSmallScreen) 10.sp else 11.sp
                             ),
                             color = Color.White.copy(alpha = 0.9f),
                             fontWeight = FontWeight.Medium
                         )
                         Text(
                             text = "${curso.docenteNombre} ${curso.docenteApellido}",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontSize = 20.sp
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = if (isSmallScreen) 15.sp else 18.sp
                             ),
                             fontWeight = FontWeight.Bold,
-                            color = Color.White
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
         }
 
-        // Tarjeta de información con estadísticas
+        // Tarjeta de información
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .offset(y = (-30).dp),
-            shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+                .offset(y = if (isSmallScreen) (-20).dp else (-24).dp),
+            shape = RoundedCornerShape(
+                topStart = if (isSmallScreen) 20.dp else 24.dp,
+                topEnd = if (isSmallScreen) 20.dp else 24.dp
+            ),
             color = FondoClaro,
-            shadowElevation = 8.dp
+            shadowElevation = if (isSmallScreen) 4.dp else 6.dp
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                    .padding(
+                        horizontal = if (isSmallScreen) 16.dp else 20.dp,
+                        vertical = if (isSmallScreen) 14.dp else 20.dp
+                    ),
+                verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 12.dp else 16.dp)
             ) {
-                // Descripción
                 Text(
                     text = curso.descripcion,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 16.sp,
-                        lineHeight = 24.sp
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = if (isSmallScreen) 13.sp else 14.sp,
+                        lineHeight = if (isSmallScreen) 18.sp else 20.sp
                     ),
-                    color = GrisMedio
+                    color = GrisMedio,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                HorizontalDivider(color = GrisClaro, thickness = 1.dp)
-
-                // Estadísticas mejoradas
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    StatCardMejorada(
-                        icon = Icons.Default.People,
-                        value = curso.participantesCount.toString(),
-                        label = "Estudiantes",
-                        color = Fucsia
-                    )
-                    StatCardMejorada(
-                        icon = Icons.Default.Book,
-                        value = curso.modulosCount.toString(),
-                        label = "Módulos",
-                        color = AzulCielo
-                    )
-                    StatCardMejorada(
-                        icon = Icons.Default.Assignment,
-                        value = contarTotalTareas(modulos).toString(),
-                        label = "Tareas",
-                        color = VerdeLima
-                    )
-                }
+                HorizontalDivider(
+                    color = GrisClaro,
+                    thickness = 1.dp
+                )
             }
         }
     }
@@ -525,41 +544,42 @@ fun StatCardMejorada(
     icon: ImageVector,
     value: String,
     label: String,
-    color: Color
+    color: Color,
+    isSmallScreen: Boolean = false
 ) {
     Surface(
         modifier = Modifier
-            .width(110.dp)
-            .height(110.dp),
-        shape = RoundedCornerShape(20.dp),
+            .width(if (isSmallScreen) 95.dp else 110.dp)
+            .height(if (isSmallScreen) 95.dp else 110.dp),
+        shape = RoundedCornerShape(if (isSmallScreen) 14.dp else 16.dp),
         color = FondoCard,
-        shadowElevation = 4.dp,
+        shadowElevation = if (isSmallScreen) 2.dp else 3.dp,
         border = BorderStroke(1.dp, GrisClaro)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp),
+                .padding(if (isSmallScreen) 8.dp else 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
             Surface(
                 shape = CircleShape,
                 color = color.copy(alpha = 0.15f),
-                modifier = Modifier.size(44.dp)
+                modifier = Modifier.size(if (isSmallScreen) 36.dp else 42.dp)
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier.padding(if (isSmallScreen) 7.dp else 9.dp),
                     tint = color
                 )
             }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(if (isSmallScreen) 4.dp else 6.dp))
             Text(
                 text = value,
                 style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 24.sp
+                    fontSize = if (isSmallScreen) 18.sp else 22.sp
                 ),
                 fontWeight = FontWeight.ExtraBold,
                 color = GrisOscuro
@@ -567,11 +587,12 @@ fun StatCardMejorada(
             Text(
                 text = label,
                 style = MaterialTheme.typography.labelSmall.copy(
-                    fontSize = 11.sp
+                    fontSize = if (isSmallScreen) 9.sp else 10.sp
                 ),
                 textAlign = TextAlign.Center,
                 color = GrisMedio,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                maxLines = 1
             )
         }
     }
@@ -579,89 +600,154 @@ fun StatCardMejorada(
 
 @Composable
 fun TabsSection(selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = FondoCard,
-        shadowElevation = 4.dp
+        shadowElevation = if (isSmallScreen) 2.dp else 3.dp
     ) {
         TabRow(
             selectedTabIndex = selectedTab,
-            containerColor = FondoCard,
+            containerColor = Color.Transparent,
             contentColor = AzulCielo,
             indicator = { tabPositions ->
-                TabRowDefaults.Indicator(
+                TabRowDefaults.SecondaryIndicator(
                     modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
-                    color = AzulCielo,
-                    height = 3.dp
+                    height = if (isSmallScreen) 2.5.dp else 3.dp,
+                    color = when (selectedTab) {
+                        0 -> VerdeLima
+                        1 -> Fucsia
+                        2 -> Color(0xFF9C27B0)
+                        else -> AzulCielo
+                    }
                 )
-            }
+            },
+            divider = {}
         ) {
             Tab(
                 selected = selectedTab == 0,
                 onClick = { onTabSelected(0) },
-                selectedContentColor = AzulCielo,
-                unselectedContentColor = GrisMedio
+                modifier = Modifier.padding(
+                    vertical = if (isSmallScreen) 8.dp else 12.dp
+                )
             ) {
-                Column(
-                    modifier = Modifier.padding(vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Assignment,
-                        null,
-                        modifier = Modifier.size(24.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(
+                        if (isSmallScreen) 6.dp else 8.dp
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(
+                        horizontal = if (isSmallScreen) 10.dp else 14.dp,
+                        vertical = if (isSmallScreen) 4.dp else 6.dp
                     )
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (selectedTab == 0)
+                            VerdeLima.copy(alpha = 0.15f)
+                        else
+                            Color.Transparent
+                    ) {
+                        Icon(
+                            Icons.Default.Assignment,
+                            null,
+                            tint = if (selectedTab == 0) VerdeLima else GrisMedio,
+                            modifier = Modifier
+                                .padding(if (isSmallScreen) 5.dp else 6.dp)
+                                .size(if (isSmallScreen) 16.dp else 20.dp)
+                        )
+                    }
                     Text(
                         "Tareas",
                         fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 14.sp
+                        color = if (selectedTab == 0) VerdeLima else GrisMedio,
+                        fontSize = if (isSmallScreen) 12.sp else 14.sp
                     )
                 }
             }
+
             Tab(
                 selected = selectedTab == 1,
                 onClick = { onTabSelected(1) },
-                selectedContentColor = AzulCielo,
-                unselectedContentColor = GrisMedio
+                modifier = Modifier.padding(
+                    vertical = if (isSmallScreen) 8.dp else 12.dp
+                )
             ) {
-                Column(
-                    modifier = Modifier.padding(vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Forum,
-                        null,
-                        modifier = Modifier.size(24.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(
+                        if (isSmallScreen) 6.dp else 8.dp
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(
+                        horizontal = if (isSmallScreen) 10.dp else 14.dp,
+                        vertical = if (isSmallScreen) 4.dp else 6.dp
                     )
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (selectedTab == 1)
+                            Fucsia.copy(alpha = 0.15f)
+                        else
+                            Color.Transparent
+                    ) {
+                        Icon(
+                            Icons.Default.Forum,
+                            null,
+                            tint = if (selectedTab == 1) Fucsia else GrisMedio,
+                            modifier = Modifier
+                                .padding(if (isSmallScreen) 5.dp else 6.dp)
+                                .size(if (isSmallScreen) 16.dp else 20.dp)
+                        )
+                    }
                     Text(
                         "Foro",
                         fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 14.sp
+                        color = if (selectedTab == 1) Fucsia else GrisMedio,
+                        fontSize = if (isSmallScreen) 12.sp else 14.sp
                     )
                 }
             }
+
             Tab(
                 selected = selectedTab == 2,
                 onClick = { onTabSelected(2) },
-                selectedContentColor = AzulCielo,
-                unselectedContentColor = GrisMedio
+                modifier = Modifier.padding(
+                    vertical = if (isSmallScreen) 8.dp else 12.dp
+                )
             ) {
-                Column(
-                    modifier = Modifier.padding(vertical = 14.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Icon(
-                        Icons.Default.CalendarMonth,
-                        null,
-                        modifier = Modifier.size(24.dp)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(
+                        if (isSmallScreen) 6.dp else 8.dp
+                    ),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(
+                        horizontal = if (isSmallScreen) 10.dp else 14.dp,
+                        vertical = if (isSmallScreen) 4.dp else 6.dp
                     )
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = if (selectedTab == 2)
+                            Color(0xFF9C27B0).copy(alpha = 0.15f)
+                        else
+                            Color.Transparent
+                    ) {
+                        Icon(
+                            Icons.Default.CalendarMonth,
+                            null,
+                            tint = if (selectedTab == 2) Color(0xFF9C27B0) else GrisMedio,
+                            modifier = Modifier
+                                .padding(if (isSmallScreen) 5.dp else 6.dp)
+                                .size(if (isSmallScreen) 16.dp else 20.dp)
+                        )
+                    }
                     Text(
                         "Calendario",
                         fontWeight = if (selectedTab == 2) FontWeight.Bold else FontWeight.Medium,
-                        fontSize = 14.sp
+                        color = if (selectedTab == 2) Color(0xFF9C27B0) else GrisMedio,
+                        fontSize = if (isSmallScreen) 12.sp else 14.sp
                     )
                 }
             }
@@ -671,219 +757,238 @@ fun TabsSection(selectedTab: Int, onTabSelected: (Int) -> Unit) {
 
 @Composable
 fun ModuloSection(modulo: ModuloConTareas, onTareaClick: (String) -> Unit) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    // NO MOSTRAR SI NO HAY TAREAS
+    if (modulo.tareas.isEmpty()) {
+        return
+    }
+
+    // Ordenar tareas
+    val tareasOrdenadas = modulo.tareas.sortedWith(
+        compareBy<TareaInfo> { it.estaVencida }
+            .thenBy { if (it.estado == "cerrada") 1 else 0 }
+            .thenBy { it.fechaEntrega }
+    )
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(
+                horizontal = if (isSmallScreen) 12.dp else 16.dp,
+                vertical = if (isSmallScreen) 6.dp else 8.dp
+            ),
+        verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 8.dp else 12.dp)
     ) {
-        // Header del módulo mejorado
+        // Header del módulo
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = AzulCieloMuyClaro,
-            border = BorderStroke(2.dp, AzulCieloClaro)
+            shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 14.dp),
+            color = Color(0xFFF3E5F5),
+            border = BorderStroke(
+                width = if (isSmallScreen) 1.5.dp else 2.dp,
+                color = Color(0xFFBA68C8)
+            ),
+            shadowElevation = if (isSmallScreen) 1.5.dp else 2.dp
         ) {
             Row(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.padding(
+                    horizontal = if (isSmallScreen) 10.dp else 14.dp,
+                    vertical = if (isSmallScreen) 10.dp else 12.dp
+                ),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 10.dp else 12.dp)
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = AzulCielo,
-                    modifier = Modifier.size(48.dp)
+                    color = Color(0xFFBA68C8),
+                    modifier = Modifier.size(if (isSmallScreen) 38.dp else 44.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.FolderOpen,
-                        contentDescription = null,
-                        modifier = Modifier.padding(12.dp),
+                        Icons.Default.FolderOpen,
+                        null,
+                        modifier = Modifier.padding(if (isSmallScreen) 9.dp else 11.dp),
                         tint = Color.White
                     )
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = modulo.nombre,
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontSize = 18.sp
-                        ),
+                        modulo.nombre,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = GrisOscuro
+                        color = GrisOscuro,
+                        fontSize = if (isSmallScreen) 14.sp else 16.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
                     )
+                    Spacer(Modifier.height(if (isSmallScreen) 2.dp else 3.dp))
                     Text(
-                        text = "${modulo.tareas.size} tareas",
-                        style = MaterialTheme.typography.bodyMedium,
+                        "${modulo.tareas.size} tarea${if (modulo.tareas.size != 1) "s" else ""}",
+                        style = MaterialTheme.typography.bodySmall,
                         color = GrisMedio,
-                        fontSize = 14.sp
+                        fontWeight = FontWeight.Medium,
+                        fontSize = if (isSmallScreen) 10.sp else 12.sp
                     )
                 }
             }
         }
 
-        Spacer(Modifier.height(12.dp))
-
-        // Tareas del módulo
-        if (modulo.tareas.isEmpty()) {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                color = GrisExtraClaro
-            ) {
-                Row(
-                    modifier = Modifier.padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        tint = GrisMedio
-                    )
-                    Text(
-                        text = "No hay tareas en este módulo",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = GrisMedio
-                    )
-                }
-            }
-        } else {
-            modulo.tareas.forEach { tarea ->
-                TareaCardMejorada(
-                    tarea = tarea,
-                    onClick = { onTareaClick(tarea.id) }
-                )
-                Spacer(Modifier.height(12.dp))
-            }
+        // Lista de tareas
+        tareasOrdenadas.forEach { tarea ->
+            TareaCardMejorada(
+                tarea = tarea,
+                onClick = { onTareaClick(tarea.id) },
+                isSmallScreen = isSmallScreen
+            )
         }
-
-        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-fun TareaCardMejorada(tarea: TareaInfo, onClick: () -> Unit) {
-    val (estadoColor, estadoFondo, estadoTexto) = when {
-        tarea.estaVencida -> Triple(ErrorOscuro, ErrorClaro, "VENCIDA")
-        tarea.estado == "cerrada" -> Triple(Advertencia, AdvertenciaClaro, "CERRADA")
-        else -> Triple(Exito, ExitoClaro, "ACTIVA")
+fun TareaCardMejorada(
+    tarea: TareaInfo,
+    onClick: () -> Unit,
+    isSmallScreen: Boolean = false
+) {
+    val (estadoColor, estadoFondo, estadoTexto, estadoIcon) = when {
+        tarea.estaVencida -> TareaEstado(ErrorOscuro, ErrorClaro, "VENCIDA", Icons.Default.Warning)
+        tarea.estado == "cerrada" -> TareaEstado(Advertencia, AdvertenciaClaro, "CERRADA", Icons.Default.Lock)
+        else -> TareaEstado(Exito, ExitoClaro, "ACTIVA", Icons.Default.CheckCircle)
     }
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(20.dp),
-        color = FondoCard,
-        shadowElevation = 4.dp
+            .clickable(onClick = onClick)
+            .shadow(
+                elevation = if (isSmallScreen) 1.5.dp else 2.dp,
+                shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 14.dp)
+            ),
+        shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 14.dp),
+        color = FondoCard
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            // Header con título y badge de estado
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                Text(
-                    text = tarea.titulo,
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 12.dp),
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 18.sp
-                    ),
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = GrisOscuro
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = estadoFondo
-                ) {
-                    Text(
-                        text = estadoTexto,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 11.sp
-                        ),
-                        fontWeight = FontWeight.ExtraBold,
-                        color = estadoColor,
-                        letterSpacing = 0.5.sp
+        Column {
+            // Barra superior de color
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (isSmallScreen) 2.5.dp else 3.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(estadoColor, estadoColor.copy(alpha = 0.4f))
+                        )
                     )
-                }
-            }
-
-            // Descripción
-            Text(
-                text = tarea.descripcion,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontSize = 15.sp,
-                    lineHeight = 22.sp
-                ),
-                color = GrisMedio,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
             )
 
-            HorizontalDivider(color = GrisClaro, thickness = 1.dp)
-
-            // Footer con fecha y botón
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.padding(
+                    horizontal = if (isSmallScreen) 12.dp else 16.dp,
+                    vertical = if (isSmallScreen) 12.dp else 14.dp
+                ),
+                horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 10.dp else 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Icono de tarea
+                Surface(
+                    shape = RoundedCornerShape(if (isSmallScreen) 8.dp else 10.dp),
+                    color = estadoFondo,
+                    modifier = Modifier.size(if (isSmallScreen) 44.dp else 52.dp)
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = if (tarea.estaVencida) ErrorClaro else AzulCieloMuyClaro,
-                        modifier = Modifier.size(40.dp)
+                    Icon(
+                        Icons.Default.Assignment,
+                        null,
+                        modifier = Modifier.padding(if (isSmallScreen) 11.dp else 13.dp),
+                        tint = estadoColor
+                    )
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = tarea.titulo,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = GrisOscuro,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = if (isSmallScreen) 13.sp else 14.sp,
+                        lineHeight = if (isSmallScreen) 17.sp else 19.sp
+                    )
+
+                    Spacer(Modifier.height(if (isSmallScreen) 5.dp else 6.dp))
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 6.dp else 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarToday,
-                            contentDescription = null,
-                            modifier = Modifier.padding(10.dp),
-                            tint = if (tarea.estaVencida) ErrorOscuro else AzulCielo
-                        )
-                    }
-                    Column {
-                        Text(
-                            text = "Fecha límite",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp
-                            ),
-                            color = GrisMedio,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = formatearFechaEntrega(tarea.fechaEntrega),
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                fontSize = 14.sp
-                            ),
-                            fontWeight = FontWeight.Bold,
-                            color = if (tarea.estaVencida) ErrorOscuro else GrisOscuro
-                        )
+                        // Badge de fecha
+                        Surface(
+                            shape = RoundedCornerShape(if (isSmallScreen) 5.dp else 6.dp),
+                            color = if (tarea.estaVencida) ErrorClaro else GrisExtraClaro
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(
+                                    horizontal = if (isSmallScreen) 6.dp else 8.dp,
+                                    vertical = if (isSmallScreen) 3.dp else 4.dp
+                                ),
+                                horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 3.dp else 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.CalendarToday,
+                                    null,
+                                    tint = if (tarea.estaVencida) ErrorOscuro else GrisMedio,
+                                    modifier = Modifier.size(if (isSmallScreen) 11.dp else 13.dp)
+                                )
+                                Text(
+                                    formatearFechaEntrega(tarea.fechaEntrega),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (tarea.estaVencida) ErrorOscuro else GrisMedio,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = if (isSmallScreen) 9.sp else 11.sp
+                                )
+                            }
+                        }
+
+                        // Badge de estado
+                        Surface(
+                            shape = RoundedCornerShape(if (isSmallScreen) 5.dp else 6.dp),
+                            color = estadoFondo
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(
+                                    horizontal = if (isSmallScreen) 6.dp else 8.dp,
+                                    vertical = if (isSmallScreen) 3.dp else 4.dp
+                                ),
+                                horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 3.dp else 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    estadoIcon,
+                                    null,
+                                    tint = estadoColor,
+                                    modifier = Modifier.size(if (isSmallScreen) 11.dp else 13.dp)
+                                )
+                                Text(
+                                    text = estadoTexto,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = estadoColor,
+                                    fontSize = if (isSmallScreen) 8.sp else 10.sp
+                                )
+                            }
+                        }
                     }
                 }
 
-                Surface(
-                    shape = CircleShape,
-                    color = AzulCielo,
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowForward,
-                        contentDescription = null,
-                        modifier = Modifier.padding(12.dp),
-                        tint = Color.White
-                    )
-                }
+                // Flecha
+                Icon(
+                    Icons.Default.ArrowForward,
+                    null,
+                    tint = estadoColor,
+                    modifier = Modifier.size(if (isSmallScreen) 18.dp else 22.dp)
+                )
             }
         }
     }
@@ -898,12 +1003,15 @@ fun NavigationFeatureCard(
     gradientColors: List<Color>,
     onClick: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(24.dp),
-        shadowElevation = 8.dp
+            .padding(horizontal = if (isSmallScreen) 12.dp else 16.dp),
+        shape = RoundedCornerShape(if (isSmallScreen) 16.dp else 20.dp),
+        shadowElevation = if (isSmallScreen) 4.dp else 6.dp
     ) {
         Box(
             modifier = Modifier
@@ -917,16 +1025,22 @@ fun NavigationFeatureCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(28.dp),
+                    .padding(
+                        horizontal = if (isSmallScreen) 18.dp else 24.dp,
+                        vertical = if (isSmallScreen) 20.dp else 28.dp
+                    ),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 14.dp else 20.dp)
             ) {
-                // Icono principal
+                // Icono
                 Surface(
-                    modifier = Modifier.size(90.dp),
+                    modifier = Modifier.size(if (isSmallScreen) 64.dp else 80.dp),
                     shape = CircleShape,
                     color = Color.White.copy(alpha = 0.25f),
-                    border = BorderStroke(3.dp, Color.White.copy(alpha = 0.4f))
+                    border = BorderStroke(
+                        width = if (isSmallScreen) 1.5.dp else 2.dp,
+                        color = Color.White.copy(alpha = 0.4f)
+                    )
                 ) {
                     Box(
                         contentAlignment = Alignment.Center,
@@ -935,73 +1049,76 @@ fun NavigationFeatureCard(
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            modifier = Modifier.size(44.dp),
+                            modifier = Modifier.size(if (isSmallScreen) 30.dp else 38.dp),
                             tint = Color.White
                         )
                     }
                 }
 
-                // Título
                 Text(
                     text = titulo,
                     style = MaterialTheme.typography.headlineSmall.copy(
-                        fontSize = 26.sp
+                        fontSize = if (isSmallScreen) 18.sp else 22.sp
                     ),
                     fontWeight = FontWeight.ExtraBold,
                     textAlign = TextAlign.Center,
-                    color = Color.White
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                // Descripción
                 Text(
                     text = descripcion,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 15.sp,
-                        lineHeight = 23.sp
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = if (isSmallScreen) 12.sp else 14.sp,
+                        lineHeight = if (isSmallScreen) 17.sp else 20.sp
                     ),
                     textAlign = TextAlign.Center,
-                    color = Color.White.copy(alpha = 0.95f)
+                    color = Color.White.copy(alpha = 0.95f),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
                 )
 
-                // Botón de acción
                 Button(
                     onClick = onClick,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(60.dp),
-                    shape = RoundedCornerShape(16.dp),
+                        .height(if (isSmallScreen) 46.dp else 54.dp),
+                    shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 14.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.White,
                         contentColor = gradientColors[0]
                     ),
                     elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 6.dp,
-                        pressedElevation = 10.dp
+                        defaultElevation = if (isSmallScreen) 3.dp else 4.dp,
+                        pressedElevation = if (isSmallScreen) 6.dp else 8.dp
                     )
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 8.dp)
+                        modifier = Modifier.padding(horizontal = if (isSmallScreen) 2.dp else 4.dp)
                     ) {
                         Icon(
                             imageVector = icon,
                             contentDescription = null,
-                            modifier = Modifier.size(26.dp)
+                            modifier = Modifier.size(if (isSmallScreen) 18.dp else 22.dp)
                         )
-                        Spacer(Modifier.width(12.dp))
+                        Spacer(Modifier.width(if (isSmallScreen) 6.dp else 8.dp))
                         Text(
                             text = buttonText,
                             style = MaterialTheme.typography.titleMedium.copy(
-                                fontSize = 17.sp
+                                fontSize = if (isSmallScreen) 13.sp else 15.sp
                             ),
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(if (isSmallScreen) 3.dp else 4.dp))
                         Icon(
                             imageVector = Icons.Default.ArrowForward,
                             contentDescription = null,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(if (isSmallScreen) 16.dp else 20.dp)
                         )
                     }
                 }
@@ -1010,50 +1127,573 @@ fun NavigationFeatureCard(
     }
 }
 
+// Data class para estados de tarea
+data class TareaEstado(
+    val color: Color,
+    val fondo: Color,
+    val texto: String,
+    val icon: ImageVector
+)
+
+// Estado vacío para cuando no hay módulos con tareas
 @Composable
-fun EmptyTareasView() {
+fun EmptyStateView(
+    icon: ImageVector,
+    titulo: String,
+    descripcion: String,
+    color: Color
+) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(
+                horizontal = if (isSmallScreen) 24.dp else 32.dp,
+                vertical = if (isSmallScreen) 32.dp else 40.dp
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            modifier = Modifier.size(if (isSmallScreen) 70.dp else 80.dp),
+            shape = CircleShape,
+            color = color.copy(alpha = 0.15f)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(if (isSmallScreen) 18.dp else 20.dp),
+                tint = color
+            )
+        }
+
+        Spacer(Modifier.height(if (isSmallScreen) 14.dp else 16.dp))
+
+        Text(
+            text = titulo,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = if (isSmallScreen) 18.sp else 20.sp
+            ),
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            color = GrisOscuro
+        )
+
+        Spacer(Modifier.height(if (isSmallScreen) 6.dp else 8.dp))
+
+        Text(
+            text = descripcion,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = if (isSmallScreen) 13.sp else 14.sp,
+                lineHeight = if (isSmallScreen) 18.sp else 20.sp
+            ),
+            textAlign = TextAlign.Center,
+            color = GrisMedio,
+            maxLines = 3
+        )
+    }
+}
+
+// Composable adicional para estadísticas responsivas
+@Composable
+fun CursoEstadisticasSection(
+    modulos: List<ModuloConTareas>,
+    isSmallScreen: Boolean = false
+) {
+    val totalTareas = modulos.sumOf { it.tareas.size }
+    val modulosConTareas = modulos.count { it.tareas.isNotEmpty() }
+    val tareasActivas = modulos.flatMap { it.tareas }.count {
+        !it.estaVencida && it.estado != "cerrada"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (isSmallScreen) 12.dp else 20.dp,
+                vertical = if (isSmallScreen) 10.dp else 16.dp
+            ),
+        horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 8.dp else 12.dp)
+    ) {
+        StatCardMejorada(
+            icon = Icons.Default.Assignment,
+            value = totalTareas.toString(),
+            label = "Tareas",
+            color = VerdeLima,
+            isSmallScreen = isSmallScreen
+        )
+
+        StatCardMejorada(
+            icon = Icons.Default.FolderOpen,
+            value = modulosConTareas.toString(),
+            label = "Módulos",
+            color = Color(0xFFBA68C8),
+            isSmallScreen = isSmallScreen
+        )
+
+        StatCardMejorada(
+            icon = Icons.Default.CheckCircle,
+            value = tareasActivas.toString(),
+            label = "Activas",
+            color = Exito,
+            isSmallScreen = isSmallScreen
+        )
+    }
+}
+
+// Divider decorativo responsivo
+@Composable
+fun DecorativeDivider(isSmallScreen: Boolean = false) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(32.dp),
+            .padding(
+                horizontal = if (isSmallScreen) 32.dp else 40.dp,
+                vertical = if (isSmallScreen) 12.dp else 16.dp
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        HorizontalDivider(
+            color = GrisClaro.copy(alpha = 0.5f),
+            thickness = 1.dp
+        )
+        Surface(
+            shape = CircleShape,
+            color = FondoClaro,
+            modifier = Modifier.padding(horizontal = if (isSmallScreen) 6.dp else 8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.MoreHoriz,
+                contentDescription = null,
+                modifier = Modifier
+                    .padding(if (isSmallScreen) 3.dp else 4.dp)
+                    .size(if (isSmallScreen) 18.dp else 20.dp),
+                tint = GrisClaro
+            )
+        }
+    }
+}
+
+// Sección de módulos con scroll responsivo
+@Composable
+fun ModulosListSection(
+    modulos: List<ModuloConTareas>,
+    onTareaClick: (String) -> Unit
+) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    // Filtrar módulos con tareas
+    val modulosConTareas = modulos.filter { it.tareas.isNotEmpty() }
+
+    if (modulosConTareas.isEmpty()) {
+        EmptyStateView(
+            icon = Icons.Default.Assignment,
+            titulo = "No hay tareas",
+            descripcion = "Los módulos con tareas aparecerán aquí cuando el profesor las publique",
+            color = VerdeLima
+        )
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                horizontal = 0.dp,
+                vertical = if (isSmallScreen) 8.dp else 12.dp
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 12.dp else 16.dp)
+        ) {
+            items(modulosConTareas.size) { index ->
+                ModuloSection(
+                    modulo = modulosConTareas[index],
+                    onTareaClick = onTareaClick
+                )
+            }
+
+            // Espaciado final
+            item {
+                Spacer(Modifier.height(if (isSmallScreen) 12.dp else 16.dp))
+            }
+        }
+    }
+}
+
+// Card de información adicional responsiva
+@Composable
+fun InfoCard(
+    icon: ImageVector,
+    titulo: String,
+    descripcion: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = if (isSmallScreen) 12.dp else 16.dp),
+        shape = RoundedCornerShape(if (isSmallScreen) 14.dp else 16.dp),
+        color = FondoCard,
+        shadowElevation = if (isSmallScreen) 2.dp else 3.dp,
+        border = BorderStroke(
+            width = if (isSmallScreen) 1.dp else 1.5.dp,
+            color = color.copy(alpha = 0.3f)
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(
+                horizontal = if (isSmallScreen) 14.dp else 16.dp,
+                vertical = if (isSmallScreen) 14.dp else 16.dp
+            ),
+            horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 12.dp else 14.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = color.copy(alpha = 0.15f),
+                modifier = Modifier.size(if (isSmallScreen) 44.dp else 48.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.padding(if (isSmallScreen) 11.dp else 12.dp),
+                    tint = color
+                )
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = titulo,
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontSize = if (isSmallScreen) 15.sp else 16.sp
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = GrisOscuro
+                )
+                Spacer(Modifier.height(if (isSmallScreen) 3.dp else 4.dp))
+                Text(
+                    text = descripcion,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontSize = if (isSmallScreen) 12.sp else 13.sp,
+                        lineHeight = if (isSmallScreen) 16.sp else 18.sp
+                    ),
+                    color = GrisMedio,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Icon(
+                imageVector = Icons.Default.ArrowForward,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(if (isSmallScreen) 20.dp else 22.dp)
+            )
+        }
+    }
+}
+
+// Header de sección responsivo
+@Composable
+fun SectionHeader(
+    titulo: String,
+    subtitulo: String? = null,
+    icon: ImageVector? = null,
+    actionText: String? = null,
+    onActionClick: (() -> Unit)? = null
+) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (isSmallScreen) 12.dp else 16.dp,
+                vertical = if (isSmallScreen) 10.dp else 12.dp
+            ),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 10.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.weight(1f)
+        ) {
+            if (icon != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = AzulCielo.copy(alpha = 0.15f),
+                    modifier = Modifier.size(if (isSmallScreen) 36.dp else 40.dp)
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        modifier = Modifier.padding(if (isSmallScreen) 9.dp else 10.dp),
+                        tint = AzulCielo
+                    )
+                }
+            }
+
+            Column {
+                Text(
+                    text = titulo,
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = if (isSmallScreen) 18.sp else 20.sp
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = GrisOscuro
+                )
+                if (subtitulo != null) {
+                    Spacer(Modifier.height(if (isSmallScreen) 2.dp else 3.dp))
+                    Text(
+                        text = subtitulo,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = if (isSmallScreen) 11.sp else 12.sp
+                        ),
+                        color = GrisMedio
+                    )
+                }
+            }
+        }
+
+        if (actionText != null && onActionClick != null) {
+            TextButton(
+                onClick = onActionClick,
+                contentPadding = PaddingValues(
+                    horizontal = if (isSmallScreen) 8.dp else 12.dp,
+                    vertical = if (isSmallScreen) 4.dp else 6.dp
+                )
+            ) {
+                Text(
+                    text = actionText,
+                    style = MaterialTheme.typography.labelLarge.copy(
+                        fontSize = if (isSmallScreen) 12.sp else 13.sp
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = AzulCielo
+                )
+                Spacer(Modifier.width(if (isSmallScreen) 3.dp else 4.dp))
+                Icon(
+                    imageVector = Icons.Default.ArrowForward,
+                    contentDescription = null,
+                    modifier = Modifier.size(if (isSmallScreen) 14.dp else 16.dp),
+                    tint = AzulCielo
+                )
+            }
+        }
+    }
+}
+
+// Shimmer loading responsivo para tarjetas
+@Composable
+fun TareaCardShimmer(isSmallScreen: Boolean = false) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (isSmallScreen) 12.dp else 16.dp,
+                vertical = if (isSmallScreen) 6.dp else 8.dp
+            ),
+        shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 14.dp),
+        color = FondoCard,
+        shadowElevation = if (isSmallScreen) 1.5.dp else 2.dp
+    ) {
+        Column {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (isSmallScreen) 2.5.dp else 3.dp)
+                    .background(GrisClaro)
+            )
+
+            Row(
+                modifier = Modifier.padding(
+                    horizontal = if (isSmallScreen) 12.dp else 16.dp,
+                    vertical = if (isSmallScreen) 12.dp else 14.dp
+                ),
+                horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 10.dp else 12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(if (isSmallScreen) 44.dp else 52.dp)
+                        .background(GrisExtraClaro, RoundedCornerShape(if (isSmallScreen) 8.dp else 10.dp))
+                )
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.7f)
+                            .height(if (isSmallScreen) 14.dp else 16.dp)
+                            .background(GrisExtraClaro, RoundedCornerShape(4.dp))
+                    )
+                    Spacer(Modifier.height(if (isSmallScreen) 6.dp else 8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.4f)
+                            .height(if (isSmallScreen) 10.dp else 12.dp)
+                            .background(GrisExtraClaro, RoundedCornerShape(4.dp))
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .size(if (isSmallScreen) 18.dp else 22.dp)
+                        .background(GrisExtraClaro, CircleShape)
+                )
+            }
+        }
+    }
+}
+
+// Mensaje de error responsivo
+@Composable
+fun ErrorStateView(
+    mensaje: String,
+    onRetry: () -> Unit
+) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(
+                horizontal = if (isSmallScreen) 24.dp else 32.dp,
+                vertical = if (isSmallScreen) 32.dp else 40.dp
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Surface(
+            modifier = Modifier.size(if (isSmallScreen) 70.dp else 80.dp),
+            shape = CircleShape,
+            color = ErrorClaro
+        ) {
+            Icon(
+                imageVector = Icons.Default.ErrorOutline,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(if (isSmallScreen) 18.dp else 20.dp),
+                tint = ErrorOscuro
+            )
+        }
+
+        Spacer(Modifier.height(if (isSmallScreen) 14.dp else 16.dp))
+
+        Text(
+            text = "¡Oops! Algo salió mal",
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = if (isSmallScreen) 18.sp else 20.sp
+            ),
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            color = GrisOscuro
+        )
+
+        Spacer(Modifier.height(if (isSmallScreen) 6.dp else 8.dp))
+
+        Text(
+            text = mensaje,
+            style = MaterialTheme.typography.bodyMedium.copy(
+                fontSize = if (isSmallScreen) 13.sp else 14.sp,
+                lineHeight = if (isSmallScreen) 18.sp else 20.sp
+            ),
+            textAlign = TextAlign.Center,
+            color = GrisMedio,
+            maxLines = 3
+        )
+
+        Spacer(Modifier.height(if (isSmallScreen) 20.dp else 24.dp))
+
+        Button(
+            onClick = onRetry,
+            modifier = Modifier
+                .fillMaxWidth(if (isSmallScreen) 0.8f else 0.6f)
+                .height(if (isSmallScreen) 44.dp else 48.dp),
+            shape = RoundedCornerShape(if (isSmallScreen) 12.dp else 14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = AzulCielo
+            )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Refresh,
+                contentDescription = null,
+                modifier = Modifier.size(if (isSmallScreen) 18.dp else 20.dp)
+            )
+            Spacer(Modifier.width(if (isSmallScreen) 6.dp else 8.dp))
+            Text(
+                text = "Reintentar",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontSize = if (isSmallScreen) 14.sp else 15.sp
+                ),
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun EmptyTareasView() {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (isSmallScreen) 20.dp else 24.dp,
+                vertical = if (isSmallScreen) 24.dp else 28.dp
+            ),
         contentAlignment = Alignment.Center
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(20.dp),
             color = FondoCard,
-            shadowElevation = 4.dp
+            shadowElevation = 3.dp
         ) {
             Column(
-                modifier = Modifier.padding(40.dp),
+                modifier = Modifier.padding(
+                    horizontal = if (isSmallScreen) 24.dp else 32.dp,
+                    vertical = if (isSmallScreen) 28.dp else 36.dp
+                ),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(20.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Surface(
                     shape = CircleShape,
                     color = AzulCieloMuyClaro,
-                    modifier = Modifier.size(100.dp)
+                    modifier = Modifier.size(if (isSmallScreen) 80.dp else 90.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Assignment,
                         contentDescription = null,
-                        modifier = Modifier.padding(24.dp),
+                        modifier = Modifier.padding(if (isSmallScreen) 20.dp else 22.dp),
                         tint = AzulCielo
                     )
                 }
                 Text(
                     text = "No hay tareas disponibles",
                     style = MaterialTheme.typography.headlineSmall.copy(
-                        fontSize = 22.sp
+                        fontSize = if (isSmallScreen) 18.sp else 20.sp
                     ),
                     fontWeight = FontWeight.Bold,
-                    color = GrisOscuro
+                    color = GrisOscuro,
+                    textAlign = TextAlign.Center
                 )
                 Text(
                     text = "Este curso aún no tiene tareas asignadas. Las tareas aparecerán aquí cuando el docente las publique.",
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 15.sp,
-                        lineHeight = 22.sp
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = if (isSmallScreen) 13.sp else 14.sp,
+                        lineHeight = if (isSmallScreen) 19.sp else 20.sp
                     ),
                     color = GrisMedio,
                     textAlign = TextAlign.Center
@@ -1063,35 +1703,214 @@ fun EmptyTareasView() {
     }
 }
 
+
 @Composable
 fun LoadingView() {
+    val infiniteTransition = rememberInfiniteTransition(label = "modernLoading")
+
+    // Rotación del gradiente circular
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+
+    // Pulsación del logo
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
+    // Alpha del resplandor
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow"
+    )
+
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Blanco),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(64.dp),
-                strokeWidth = 6.dp,
+            Box(
+                modifier = Modifier.size(120.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                // Anillo exterior rotatorio con gradiente
+                Surface(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .graphicsLayer {
+                            rotationZ = rotation
+                        },
+                    shape = CircleShape,
+                    color = Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(
+                        4.dp,
+                        Brush.sweepGradient(
+                            colors = listOf(
+                                AzulCielo,
+                                VerdeLima,
+                                Fucsia,
+                                Naranja,
+                                AzulCielo
+                            )
+                        )
+                    )
+                ) {}
+
+                // Resplandor intermedio
+                Surface(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = AzulCielo.copy(alpha = glowAlpha * 0.2f)
+                ) {}
+
+                // Logo central - AQUÍ VA TU IMAGEN
+                Surface(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = Blanco,
+                    shadowElevation = 16.dp
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        AzulCielo.copy(alpha = 0.1f),
+                                        Blanco
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // REEMPLAZA ESTO CON TU IMAGEN DEL LOGO
+                        Image(
+                            painter = painterResource(id = R.drawable.edumonavatar1), // <-- PON AQUÍ TU LOGO
+                            contentDescription = "Logo Edumon",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .padding(12.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+
+                // Puntos orbitales
+                for (i in 0..2) {
+                    val orbitRotation by infiniteTransition.animateFloat(
+                        initialValue = i * 120f,
+                        targetValue = i * 120f + 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(3000 + i * 500, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "orbit$i"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .graphicsLayer {
+                                rotationZ = orbitRotation
+                            }
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .offset(y = (-60).dp)
+                                .align(Alignment.TopCenter),
+                            shape = CircleShape,
+                            color = listOf(VerdeLima, Fucsia, Naranja)[i],
+                            shadowElevation = 4.dp
+                        ) {}
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Puntos animados de carga
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0..2) {
+                    val dotScale by infiniteTransition.animateFloat(
+                        initialValue = 0.5f,
+                        targetValue = 1.2f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                600,
+                                easing = FastOutSlowInEasing,
+                                delayMillis = i * 200
+                            ),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "dot$i"
+                    )
+
+                    Surface(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .scale(dotScale),
+                        shape = CircleShape,
+                        color = listOf(AzulCielo, VerdeLima, Fucsia)[i]
+                    ) {}
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            Text(
+                text = "Cargando",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
                 color = AzulCielo
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Text(
-                text = "Cargando curso...",
-                style = MaterialTheme.typography.titleLarge.copy(
-                    fontSize = 18.sp
-                ),
-                fontWeight = FontWeight.Bold,
-                color = GrisOscuro
+                text = "Preparando tu experiencia educativa",
+                fontSize = 14.sp,
+                color = GrisNeutral,
+                fontWeight = FontWeight.Medium
             )
         }
     }
 }
-
 @Composable
 fun ErrorView(message: String, onRetry: () -> Unit, onBack: () -> Unit) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1101,77 +1920,81 @@ fun ErrorView(message: String, onRetry: () -> Unit, onBack: () -> Unit) {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(28.dp),
-            shape = RoundedCornerShape(24.dp),
+                .padding(if (isSmallScreen) 20.dp else 24.dp),
+            shape = RoundedCornerShape(20.dp),
             color = FondoCard,
-            shadowElevation = 6.dp
+            shadowElevation = 4.dp
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                modifier = Modifier.padding(36.dp)
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+                modifier = Modifier.padding(
+                    horizontal = if (isSmallScreen) 24.dp else 28.dp,
+                    vertical = if (isSmallScreen) 28.dp else 32.dp
+                )
             ) {
                 Surface(
                     shape = CircleShape,
                     color = ErrorClaro,
-                    modifier = Modifier.size(90.dp)
+                    modifier = Modifier.size(if (isSmallScreen) 70.dp else 80.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Error,
                         contentDescription = null,
-                        modifier = Modifier.padding(22.dp),
+                        modifier = Modifier.padding(if (isSmallScreen) 18.dp else 20.dp),
                         tint = ErrorOscuro
                     )
                 }
                 Text(
                     text = "Error al cargar",
                     style = MaterialTheme.typography.headlineSmall.copy(
-                        fontSize = 24.sp
+                        fontSize = if (isSmallScreen) 19.sp else 21.sp
                     ),
                     fontWeight = FontWeight.Bold,
                     color = GrisOscuro
                 )
                 Text(
                     text = message,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontSize = 15.sp,
-                        lineHeight = 22.sp
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = if (isSmallScreen) 13.sp else 14.sp,
+                        lineHeight = if (isSmallScreen) 19.sp else 20.sp
                     ),
                     textAlign = TextAlign.Center,
                     color = GrisMedio
                 )
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     OutlinedButton(
                         onClick = onBack,
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
+                            .height(if (isSmallScreen) 46.dp else 50.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = AzulCielo
                         ),
-                        border = BorderStroke(2.dp, AzulCielo)
+                        border = BorderStroke(1.5.dp, AzulCielo)
                     ) {
                         Icon(
                             Icons.Default.ArrowBack,
                             null,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(if (isSmallScreen) 18.dp else 20.dp)
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             "Volver",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            fontSize = if (isSmallScreen) 13.sp else 14.sp
                         )
                     }
                     Button(
                         onClick = onRetry,
                         modifier = Modifier
                             .weight(1f)
-                            .height(52.dp),
-                        shape = RoundedCornerShape(16.dp),
+                            .height(if (isSmallScreen) 46.dp else 50.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = AzulCielo
                         )
@@ -1179,13 +2002,13 @@ fun ErrorView(message: String, onRetry: () -> Unit, onBack: () -> Unit) {
                         Icon(
                             Icons.Default.Refresh,
                             null,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(if (isSmallScreen) 18.dp else 20.dp)
                         )
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             "Reintentar",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
+                            fontSize = if (isSmallScreen) 13.sp else 14.sp
                         )
                     }
                 }
@@ -1200,7 +2023,7 @@ fun ErrorView(message: String, onRetry: () -> Unit, onBack: () -> Unit) {
  * Formatea una fecha de entrega de formato ISO a un formato legible
  * Ejemplo: "2025-11-15T23:59:00Z" -> "15/11/2025"
  */
- fun formatearFechaEntrega(fecha: String): String {
+fun formatearFechaEntrega(fecha: String): String {
     return try {
         if (fecha.isEmpty()) return "Sin fecha"
 
@@ -1223,7 +2046,7 @@ fun ErrorView(message: String, onRetry: () -> Unit, onBack: () -> Unit) {
 /**
  * Verifica si una fecha ya ha vencido comparándola con la fecha actual
  */
- fun estaFechaVencida(fecha: String): Boolean {
+fun estaFechaVencida(fecha: String): Boolean {
     return try {
         if (fecha.isEmpty()) return false
 

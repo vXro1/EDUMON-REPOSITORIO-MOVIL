@@ -21,12 +21,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -35,10 +39,16 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
+import com.example.edumonjetcompose.Fucsia
 import com.example.edumonjetcompose.Naranja
+import com.example.edumonjetcompose.R
+import com.example.edumonjetcompose.VerdeLima
 import com.example.edumonjetcompose.models.*
 import com.example.edumonjetcompose.network.ApiService
 import com.example.edumonjetcompose.ui.*
+import com.example.edumonjetcompose.ui.theme.AzulCielo
+import com.example.edumonjetcompose.ui.theme.Blanco
+import com.example.edumonjetcompose.ui.theme.GrisNeutral
 import com.google.gson.JsonArray
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -66,6 +76,7 @@ fun InfoCursoScreenProfesor(
     var proximosEventos by remember { mutableStateOf<List<EventoInfo>>(emptyList()) }
     var eventosDelMes by remember { mutableStateOf<Map<Int, List<EventoInfo>>>(emptyMap()) }
     var isLoading by remember { mutableStateOf(true) }
+    var isLoadingTabs by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     var showEditDialog by remember { mutableStateOf(false) }
@@ -100,8 +111,13 @@ fun InfoCursoScreenProfesor(
                 id = cursoJson.get("_id")?.asString ?: cursoId,
                 nombre = cursoJson.get("nombre")?.asString ?: "Mi Curso",
                 descripcion = cursoJson.get("descripcion")?.asString ?: "Sin descripción",
-                fotoPortadaUrl = cursoJson.get("fotoPortadaUrl")?.asString?.let {
-                    if (it.startsWith("http")) it else BASE_URL + it
+                fotoPortadaUrl = cursoJson?.get("fotoPortadaUrl")?.let { element ->
+                    if (!element.isJsonNull) {
+                        val url = element.asString
+                        if (url.startsWith("http")) url else BASE_URL + url
+                    } else {
+                        null
+                    }
                 },
                 docenteNombre = docenteJson?.get("nombre")?.asString ?: "",
                 docenteApellido = docenteJson?.get("apellido")?.asString ?: "",
@@ -144,20 +160,27 @@ fun InfoCursoScreenProfesor(
                 for (mElem in modulosJson) {
                     val m = mElem.asJsonObject
                     val moduloId = m.get("_id")?.asString.orEmpty()
+                    val moduloNombre = m.get("modulo")?.asString ?: m.get("titulo")?.asString ?: "Sin nombre"
                     val tareasModulo = mutableListOf<TareaInfo>()
+
+                    Log.d("InfoCursoProfesor", "📁 Módulo: $moduloNombre (ID: $moduloId)")
 
                     for (tElem in tareasJson) {
                         val t = tElem.asJsonObject
+                        // Extraer ID del módulo de la tarea (puede venir como string o como objeto)
                         val tareaModuloId = when {
                             t.has("moduloId") && !t.get("moduloId").isJsonNull -> {
+                                val moduloIdElement = t.get("moduloId")
                                 when {
-                                    t.get("moduloId").isJsonPrimitive -> t.get("moduloId").asString
-                                    t.get("moduloId").isJsonObject -> t.getAsJsonObject("moduloId").get("_id")?.asString
+                                    moduloIdElement.isJsonPrimitive -> moduloIdElement.asString
+                                    moduloIdElement.isJsonObject -> moduloIdElement.asJsonObject.get("_id")?.asString
                                     else -> null
                                 }
                             }
                             else -> null
                         }
+
+                        Log.d("InfoCursoProfesor", "   📝 Tarea: ${t.get("titulo")?.asString} - moduloId: $tareaModuloId")
 
                         if (tareaModuloId == moduloId) {
                             val fechaEntrega = t.get("fechaLimite")?.asString ?: t.get("fechaEntrega")?.asString ?: ""
@@ -174,17 +197,22 @@ fun InfoCursoScreenProfesor(
                                     estaVencida = estaVencida
                                 )
                             )
+                            Log.d("InfoCursoProfesor", "      ✅ Tarea agregada al módulo")
                         }
                     }
+
+                    Log.d("InfoCursoProfesor", "   📊 Total tareas en módulo: ${tareasModulo.size}")
 
                     modulosList.add(
                         ModuloConTareas(
                             id = moduloId,
-                            nombre = m.get("nombre")?.asString ?: "Sin nombre",
+                            nombre = moduloNombre,
                             tareas = tareasModulo
                         )
                     )
                 }
+
+                Log.d("InfoCursoProfesor", "✅ Total módulos cargados: ${modulosList.size}")
 
                 modulos = modulosList
                 cursoDetalle = cursoDetalle?.copy(modulosCount = modulosList.size)
@@ -396,7 +424,7 @@ fun InfoCursoScreenProfesor(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 20.dp, vertical = 8.dp)
-                                        .clickable { navController.navigate("calendarioProfesor/$cursoId") },
+                                        .clickable { navController.navigate("calendario/$cursoId") },
                                     shape = RoundedCornerShape(16.dp),
                                     color = Color(0xFF9C27B0).copy(alpha = 0.1f),
                                     border = BorderStroke(2.dp, Color(0xFF9C27B0).copy(alpha = 0.3f))
@@ -471,8 +499,11 @@ fun InfoCursoScreenProfesor(
                                     },
                                     onVerCalendarioCompleto = {
                                         navController.navigate("calendarioProfesor/$cursoId")
-                                    }
+                                    },
+                                    isLoadingTabs = false
                                 )
+
+
                             }
                         }
                     }
@@ -606,34 +637,11 @@ private fun EnhancedCursoHeaderView(curso: CursoDetalleProfesor) {
                     modifier = Modifier.padding(vertical = 8.dp),
                     color = GrisExtraClaro
                 )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    CursoStatItem(
-                        icon = Icons.Default.FolderOpen,
-                        value = "${curso.modulosCount}",
-                        label = "Módulos",
-                        color = Color(0xFFBA68C8)
-                    )
-                    CursoStatItem(
-                        icon = Icons.Default.People,
-                        value = "${curso.participantesCount}",
-                        label = "Estudiantes",
-                        color = AzulCielo
-                    )
-                    CursoStatItem(
-                        icon = Icons.Default.Assignment,
-                        value = "Activo",
-                        label = "Estado",
-                        color = VerdeLima
-                    )
                 }
             }
         }
     }
-}
+
 
 @Composable
 private fun CursoStatItem(
@@ -689,8 +697,7 @@ private fun ModernBadge(text: String, icon: ImageVector, color: Color) {
         }
     }
 }
-
-// ==================== QUICK ACTIONS ====================
+// ==================== QUICK ACTIONS MEJORADO ====================
 
 private data class ProfesorActionButton(
     val icon: ImageVector,
@@ -707,6 +714,9 @@ private fun ModernQuickActionsRow(
     modulosCount: Int,
     eventosCount: Int
 ) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
     val actions = listOf(
         ProfesorActionButton(
             Icons.Default.PersonAdd,
@@ -748,14 +758,160 @@ private fun ModernQuickActionsRow(
         )
     )
 
-    LazyRow(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = if (isSmallScreen) 16.dp else 20.dp,
+                vertical = if (isSmallScreen) 12.dp else 16.dp
+            )
     ) {
-        items(actions.size) { index ->
-            EnhancedActionCardView(actions[index]) {
-                navController.navigate(actions[index].route)
+        // Título de la sección
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = if (isSmallScreen) 12.dp else 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = AzulCielo.copy(alpha = 0.15f),
+                    modifier = Modifier.size(if (isSmallScreen) 36.dp else 40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Dashboard,
+                        contentDescription = null,
+                        modifier = Modifier.padding(if (isSmallScreen) 8.dp else 10.dp),
+                        tint = AzulCielo
+                    )
+                }
+                Text(
+                    text = "Acciones Rápidas",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontSize = if (isSmallScreen) 18.sp else 20.sp
+                    ),
+                    fontWeight = FontWeight.Bold,
+                    color = GrisOscuro
+                )
+            }
+        }
+
+        // Grid de acciones (3 columnas)
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 10.dp else 12.dp)
+        ) {
+            // Dividir acciones en filas de 3
+            actions.chunked(3).forEach { rowActions ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 10.dp else 12.dp)
+                ) {
+                    rowActions.forEach { action ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            EnhancedActionCardView(
+                                action = action,
+                                isSmallScreen = isSmallScreen
+                            ) {
+                                navController.navigate(action.route)
+                            }
+                        }
+                    }
+                    // Agregar espacios vacíos si la fila no está completa
+                    repeat(3 - rowActions.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EnhancedActionCardView(
+    action: ProfesorActionButton,
+    isSmallScreen: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(if (isSmallScreen) 100.dp else 110.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        color = FondoCard,
+        shadowElevation = 3.dp,
+        border = BorderStroke(1.dp, action.color.copy(alpha = 0.2f))
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Badge si existe
+            if (action.badge != null) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(8.dp),
+                    shape = CircleShape,
+                    color = action.color,
+                    shadowElevation = 2.dp
+                ) {
+                    Text(
+                        text = action.badge,
+                        modifier = Modifier.padding(
+                            horizontal = if (isSmallScreen) 6.dp else 8.dp,
+                            vertical = if (isSmallScreen) 3.dp else 4.dp
+                        ),
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = if (isSmallScreen) 10.sp else 11.sp
+                        ),
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            }
+
+            // Contenido principal
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(if (isSmallScreen) 12.dp else 14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Icono con fondo de color
+                Surface(
+                    shape = CircleShape,
+                    color = action.color.copy(alpha = 0.15f),
+                    modifier = Modifier.size(if (isSmallScreen) 44.dp else 48.dp)
+                ) {
+                    Icon(
+                        imageVector = action.icon,
+                        contentDescription = null,
+                        modifier = Modifier.padding(if (isSmallScreen) 10.dp else 12.dp),
+                        tint = action.color
+                    )
+                }
+
+                Spacer(Modifier.height(if (isSmallScreen) 8.dp else 10.dp))
+
+                // Etiqueta
+                Text(
+                    text = action.label,
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontSize = if (isSmallScreen) 11.sp else 12.sp,
+                        lineHeight = if (isSmallScreen) 14.sp else 15.sp
+                    ),
+                    fontWeight = FontWeight.SemiBold,
+                    color = GrisOscuro,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
@@ -841,8 +997,9 @@ private fun EnhancedActionCardView(action: ProfesorActionButton, onClick: () -> 
         }
     }
 }
-
 // ==================== TABS ====================
+
+// ==================== TABS MEJORADAS ====================
 
 private data class ProfesorTabItem(
     val title: String,
@@ -860,12 +1017,16 @@ private fun EnhancedTabsSectionView(
     eventosDelMes: Map<Int, List<EventoInfo>>,
     selectedMonth: Int,
     selectedYear: Int,
+    isLoadingTabs: Boolean,
     onMonthChange: (Int, Int) -> Unit,
     onTareaClick: (String) -> Unit,
     onForoClick: (String) -> Unit,
     onVerCalendarioCompleto: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
     val tabs = listOf(
         ProfesorTabItem("Tareas", Icons.Default.Assignment, VerdeLima),
         ProfesorTabItem("Foros", Icons.Default.Forum, Fucsia),
@@ -875,12 +1036,12 @@ private fun EnhancedTabsSectionView(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(600.dp)
+            .height(if (isSmallScreen) 550.dp else 600.dp)
     ) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = FondoCard,
-            shadowElevation = 4.dp
+            shadowElevation = 3.dp
         ) {
             ScrollableTabRow(
                 selectedTabIndex = pagerState.currentPage,
@@ -891,7 +1052,7 @@ private fun EnhancedTabsSectionView(
                     if (tabPositions.isNotEmpty() && pagerState.currentPage < tabPositions.size) {
                         TabRowDefaults.SecondaryIndicator(
                             modifier = Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]),
-                            height = 4.dp,
+                            height = 3.dp,
                             color = tabs[pagerState.currentPage].color
                         )
                     }
@@ -902,12 +1063,15 @@ private fun EnhancedTabsSectionView(
                     Tab(
                         selected = pagerState.currentPage == index,
                         onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
-                        modifier = Modifier.padding(vertical = 12.dp)
+                        modifier = Modifier.padding(vertical = if (isSmallScreen) 10.dp else 12.dp)
                     ) {
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(
+                                horizontal = if (isSmallScreen) 12.dp else 14.dp,
+                                vertical = 6.dp
+                            )
                         ) {
                             Surface(
                                 shape = CircleShape,
@@ -920,7 +1084,9 @@ private fun EnhancedTabsSectionView(
                                     tab.icon,
                                     null,
                                     tint = if (pagerState.currentPage == index) tab.color else GrisMedio,
-                                    modifier = Modifier.padding(8.dp).size(20.dp)
+                                    modifier = Modifier
+                                        .padding(6.dp)
+                                        .size(if (isSmallScreen) 18.dp else 20.dp)
                                 )
                             }
 
@@ -931,7 +1097,7 @@ private fun EnhancedTabsSectionView(
                                 else
                                     FontWeight.Medium,
                                 color = if (pagerState.currentPage == index) tab.color else GrisMedio,
-                                fontSize = 15.sp
+                                fontSize = if (isSmallScreen) 13.sp else 14.sp
                             )
                         }
                     }
@@ -947,6 +1113,7 @@ private fun EnhancedTabsSectionView(
                     eventosDelMes = eventosDelMes,
                     selectedMonth = selectedMonth,
                     selectedYear = selectedYear,
+                    isLoadingTabs = isLoadingTabs,
                     onMonthChange = onMonthChange,
                     onVerCalendarioCompleto = onVerCalendarioCompleto
                 )
@@ -957,7 +1124,13 @@ private fun EnhancedTabsSectionView(
 
 @Composable
 private fun TareasTabView(modulos: List<ModuloConTareas>, onTareaClick: (String) -> Unit) {
-    if (modulos.isEmpty() || modulos.all { it.tareas.isEmpty() }) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    // Filtrar módulos que tienen tareas
+    val modulosConTareas = modulos.filter { it.tareas.isNotEmpty() }
+
+    if (modulosConTareas.isEmpty()) {
         EmptyStateView(
             Icons.Default.Assignment,
             "No hay tareas",
@@ -967,71 +1140,79 @@ private fun TareasTabView(modulos: List<ModuloConTareas>, onTareaClick: (String)
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+            contentPadding = PaddingValues(if (isSmallScreen) 14.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 14.dp else 16.dp)
         ) {
-            items(modulos.size) { index ->
-                if (modulos[index].tareas.isNotEmpty()) {
-                    ModuloEnhancedSectionView(modulos[index], onTareaClick)
-                }
+            items(modulosConTareas.size) { index ->
+                ModuloEnhancedSectionView(modulosConTareas[index], onTareaClick, isSmallScreen)
             }
         }
     }
 }
 
 @Composable
-private fun ModuloEnhancedSectionView(modulo: ModuloConTareas, onTareaClick: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun ModuloEnhancedSectionView(modulo: ModuloConTareas, onTareaClick: (String) -> Unit, isSmallScreen: Boolean = false) {
+    // Ordenar tareas por fecha de entrega
+    val tareasOrdenadas = modulo.tareas.sortedWith(
+        compareBy<TareaInfo> { it.estaVencida }
+            .thenBy { if (it.estado == "cerrada") 1 else 0 }
+            .thenBy { it.fechaEntrega }
+    )
+
+
+    Column(verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 10.dp else 12.dp)) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             color = Color(0xFFF3E5F5),
             border = BorderStroke(2.dp, Color(0xFFBA68C8)),
             shadowElevation = 2.dp
         ) {
             Row(
-                modifier = Modifier.padding(16.dp),
+                modifier = Modifier.padding(if (isSmallScreen) 12.dp else 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Surface(
                     shape = CircleShape,
                     color = Color(0xFFBA68C8),
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(if (isSmallScreen) 40.dp else 44.dp)
                 ) {
                     Icon(
                         Icons.Default.FolderOpen,
                         null,
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(if (isSmallScreen) 10.dp else 11.dp),
                         tint = Color.White
                     )
                 }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         modulo.nombre,
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = GrisOscuro
+                        color = GrisOscuro,
+                        fontSize = if (isSmallScreen) 15.sp else 16.sp
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(3.dp))
                     Text(
                         "${modulo.tareas.size} tarea${if (modulo.tareas.size != 1) "s" else ""}",
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
                         color = GrisMedio,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        fontSize = if (isSmallScreen) 11.sp else 12.sp
                     )
                 }
             }
         }
 
-        modulo.tareas.forEach { tarea ->
-            EnhancedTareaCardView(tarea) { onTareaClick(tarea.id) }
+        tareasOrdenadas.forEach { tarea ->
+            EnhancedTareaCardView(tarea, isSmallScreen) { onTareaClick(tarea.id) }
         }
     }
 }
 
 @Composable
-private fun EnhancedTareaCardView(tarea: TareaInfo, onClick: () -> Unit) {
+private fun EnhancedTareaCardView(tarea: TareaInfo, isSmallScreen: Boolean = false, onClick: () -> Unit) {
     val (estadoColor, estadoFondo, estadoTexto, estadoIcon) = when {
         tarea.estaVencida -> TareaEstado(ErrorOscuro, ErrorClaro, "VENCIDA", Icons.Default.Warning)
         tarea.estado == "cerrada" -> TareaEstado(Advertencia, AdvertenciaClaro, "CERRADA", Icons.Default.Lock)
@@ -1042,36 +1223,36 @@ private fun EnhancedTareaCardView(tarea: TareaInfo, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .shadow(3.dp, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
+            .shadow(2.dp, RoundedCornerShape(14.dp)),
+        shape = RoundedCornerShape(14.dp),
         color = FondoCard
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
+                    .height(3.dp)
                     .background(
                         Brush.horizontalGradient(
-                            listOf(estadoColor, estadoColor.copy(alpha = 0.5f))
+                            listOf(estadoColor, estadoColor.copy(alpha = 0.4f))
                         )
                     )
             )
 
             Row(
-                modifier = Modifier.padding(20.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(if (isSmallScreen) 14.dp else 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = estadoFondo,
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(if (isSmallScreen) 48.dp else 52.dp)
                 ) {
                     Icon(
                         Icons.Default.Assignment,
                         null,
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(if (isSmallScreen) 12.dp else 13.dp),
                         tint = estadoColor
                     )
                 }
@@ -1079,63 +1260,67 @@ private fun EnhancedTareaCardView(tarea: TareaInfo, onClick: () -> Unit) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = tarea.titulo,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = GrisOscuro,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = if (isSmallScreen) 13.sp else 14.sp
                     )
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = if (tarea.estaVencida) ErrorClaro else GrisExtraClaro
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     Icons.Default.CalendarToday,
                                     null,
                                     tint = if (tarea.estaVencida) ErrorOscuro else GrisMedio,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(if (isSmallScreen) 12.dp else 13.dp)
                                 )
                                 Text(
                                     formatearFechaEntrega(tarea.fechaEntrega),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = if (tarea.estaVencida) ErrorOscuro else GrisMedio,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = if (isSmallScreen) 10.sp else 11.sp
                                 )
                             }
                         }
 
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = estadoFondo
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     estadoIcon,
                                     null,
                                     tint = estadoColor,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(if (isSmallScreen) 12.dp else 13.dp)
                                 )
                                 Text(
                                     text = estadoTexto,
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = estadoColor
+                                    color = estadoColor,
+                                    fontSize = if (isSmallScreen) 9.sp else 10.sp
                                 )
                             }
                         }
@@ -1146,7 +1331,7 @@ private fun EnhancedTareaCardView(tarea: TareaInfo, onClick: () -> Unit) {
                     Icons.Default.ArrowForward,
                     null,
                     tint = estadoColor,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(if (isSmallScreen) 20.dp else 22.dp)
                 )
             }
         }
@@ -1155,6 +1340,9 @@ private fun EnhancedTareaCardView(tarea: TareaInfo, onClick: () -> Unit) {
 
 @Composable
 private fun ForosTabView(foros: List<ForoInfo>, onForoClick: (String) -> Unit) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
     if (foros.isEmpty()) {
         EmptyStateView(
             Icons.Default.Forum,
@@ -1165,52 +1353,52 @@ private fun ForosTabView(foros: List<ForoInfo>, onForoClick: (String) -> Unit) {
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(if (isSmallScreen) 14.dp else 16.dp),
+            verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 12.dp else 14.dp)
         ) {
             items(foros.size) { index ->
-                EnhancedForoCardView(foros[index]) { onForoClick(foros[index].id) }
+                EnhancedForoCardView(foros[index], isSmallScreen) { onForoClick(foros[index].id) }
             }
         }
     }
 }
 
 @Composable
-private fun EnhancedForoCardView(foro: ForoInfo, onClick: () -> Unit) {
+private fun EnhancedForoCardView(foro: ForoInfo, isSmallScreen: Boolean = false, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .shadow(3.dp, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
+            .shadow(2.dp, RoundedCornerShape(14.dp)),
+        shape = RoundedCornerShape(14.dp),
         color = FondoCard
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
+                    .height(3.dp)
                     .background(
                         Brush.horizontalGradient(
-                            listOf(Fucsia, Fucsia.copy(alpha = 0.5f))
+                            listOf(Fucsia, Fucsia.copy(alpha = 0.4f))
                         )
                     )
             )
 
             Row(
-                modifier = Modifier.padding(20.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(if (isSmallScreen) 14.dp else 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = Fucsia.copy(alpha = 0.15f),
-                    modifier = Modifier.size(56.dp)
+                    modifier = Modifier.size(if (isSmallScreen) 48.dp else 52.dp)
                 ) {
                     Icon(
                         Icons.Default.Forum,
                         null,
-                        modifier = Modifier.padding(14.dp),
+                        modifier = Modifier.padding(if (isSmallScreen) 12.dp else 13.dp),
                         tint = Fucsia
                     )
                 }
@@ -1218,64 +1406,68 @@ private fun EnhancedForoCardView(foro: ForoInfo, onClick: () -> Unit) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = foro.titulo,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = GrisOscuro,
                         maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        fontSize = if (isSmallScreen) 13.sp else 14.sp
                     )
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = GrisExtraClaro
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     Icons.Default.ChatBubble,
                                     null,
                                     tint = Fucsia,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(if (isSmallScreen) 12.dp else 13.dp)
                                 )
                                 Text(
                                     "${foro.mensajesCount} mensaje${if (foro.mensajesCount != 1) "s" else ""}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = GrisMedio,
-                                    fontWeight = FontWeight.Medium
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = if (isSmallScreen) 10.sp else 11.sp
                                 )
                             }
                         }
 
                         if (foro.fechaCreacion.isNotEmpty()) {
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(6.dp),
                                 color = GrisExtraClaro
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Icon(
                                         Icons.Default.CalendarToday,
                                         null,
                                         tint = GrisMedio,
-                                        modifier = Modifier.size(14.dp)
+                                        modifier = Modifier.size(if (isSmallScreen) 12.dp else 13.dp)
                                     )
                                     Text(
                                         formatearFechaEntrega(foro.fechaCreacion),
                                         style = MaterialTheme.typography.bodySmall,
                                         color = GrisMedio,
-                                        fontWeight = FontWeight.Medium
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = if (isSmallScreen) 10.sp else 11.sp
                                     )
                                 }
                             }
@@ -1287,7 +1479,7 @@ private fun EnhancedForoCardView(foro: ForoInfo, onClick: () -> Unit) {
                     Icons.Default.ArrowForward,
                     null,
                     tint = Fucsia,
-                    modifier = Modifier.size(24.dp)
+                    modifier = Modifier.size(if (isSmallScreen) 20.dp else 22.dp)
                 )
             }
         }
@@ -1299,74 +1491,106 @@ private fun CalendarioTabView(
     eventosDelMes: Map<Int, List<EventoInfo>>,
     selectedMonth: Int,
     selectedYear: Int,
+    isLoadingTabs: Boolean,
     onMonthChange: (Int, Int) -> Unit,
     onVerCalendarioCompleto: () -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
     Column(modifier = Modifier.fillMaxSize().background(FondoClaro)) {
         CalendarioHeaderView(
             selectedMonth = selectedMonth,
             selectedYear = selectedYear,
-            onMonthChange = onMonthChange
+            onMonthChange = onMonthChange,
+            isSmallScreen = isSmallScreen
         )
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                CalendarioGridView(
-                    month = selectedMonth,
-                    year = selectedYear,
-                    eventosDelMes = eventosDelMes
-                )
-            }
-
-            item { Spacer(Modifier.height(8.dp)) }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+        if (isLoadingTabs) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text(
-                        "Eventos del mes",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = GrisOscuro
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(40.dp),
+                        strokeWidth = 4.dp,
+                        color = Color(0xFF9C27B0)
                     )
+                    Text(
+                        "Cargando eventos...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = GrisMedio
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(if (isSmallScreen) 14.dp else 16.dp),
+                verticalArrangement = Arrangement.spacedBy(if (isSmallScreen) 12.dp else 14.dp)
+            ) {
+                item {
+                    CalendarioGridView(
+                        month = selectedMonth,
+                        year = selectedYear,
+                        eventosDelMes = eventosDelMes,
+                        isSmallScreen = isSmallScreen
+                    )
+                }
 
-                    TextButton(onClick = onVerCalendarioCompleto) {
+                item { Spacer(Modifier.height(6.dp)) }
+
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            "Ver completo",
-                            color = Color(0xFF9C27B0),
-                            fontWeight = FontWeight.Bold
+                            "Eventos del mes",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = GrisOscuro,
+                            fontSize = if (isSmallScreen) 16.sp else 18.sp
                         )
-                        Icon(
-                            Icons.Default.ArrowForward,
-                            null,
-                            tint = Color(0xFF9C27B0),
-                            modifier = Modifier.size(18.dp)
-                        )
+
+                        TextButton(onClick = onVerCalendarioCompleto) {
+                            Text(
+                                "Ver completo",
+                                color = Color(0xFF9C27B0),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = if (isSmallScreen) 12.sp else 13.sp
+                            )
+                            Icon(
+                                Icons.Default.ArrowForward,
+                                null,
+                                tint = Color(0xFF9C27B0),
+                                modifier = Modifier.size(if (isSmallScreen) 16.dp else 18.dp)
+                            )
+                        }
                     }
                 }
-            }
 
-            val todosLosEventos = eventosDelMes.values.flatten().sortedBy { it.fecha }
+                val todosLosEventos = eventosDelMes.values.flatten()
+                    .sortedWith(compareBy({ obtenerDiaNumero(it.fecha) }, { it.hora ?: "" }))
 
-            if (todosLosEventos.isEmpty()) {
-                item {
-                    EmptyStateView(
-                        Icons.Default.CalendarMonth,
-                        "Sin eventos este mes",
-                        "No hay eventos programados para ${obtenerNombreMes(selectedMonth)} $selectedYear",
-                        Color(0xFF9C27B0)
-                    )
-                }
-            } else {
-                items(todosLosEventos.size) { index ->
-                    EnhancedEventoCardView(todosLosEventos[index])
+                if (todosLosEventos.isEmpty()) {
+                    item {
+                        EmptyStateView(
+                            Icons.Default.CalendarMonth,
+                            "Sin eventos este mes",
+                            "No hay eventos programados para ${obtenerNombreMes(selectedMonth)} $selectedYear",
+                            Color(0xFF9C27B0)
+                        )
+                    }
+                } else {
+                    items(todosLosEventos.size) { index ->
+                        EnhancedEventoCardView(todosLosEventos[index], isSmallScreen)
+                    }
                 }
             }
         }
@@ -1374,7 +1598,7 @@ private fun CalendarioTabView(
 }
 
 @Composable
-private fun EnhancedEventoCardView(evento: EventoInfo) {
+private fun EnhancedEventoCardView(evento: EventoInfo, isSmallScreen: Boolean = false) {
     val categoriaColor = when (evento.categoria) {
         "tarea" -> Color(0xFFFF9800)
         "examen" -> Color(0xFFE53935)
@@ -1389,31 +1613,31 @@ private fun EnhancedEventoCardView(evento: EventoInfo) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .shadow(3.dp, RoundedCornerShape(16.dp)),
-        shape = RoundedCornerShape(16.dp),
+            .shadow(2.dp, RoundedCornerShape(14.dp)),
+        shape = RoundedCornerShape(14.dp),
         color = FondoCard
     ) {
         Column {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(4.dp)
+                    .height(3.dp)
                     .background(
                         Brush.horizontalGradient(
-                            listOf(categoriaColor, categoriaColor.copy(alpha = 0.5f))
+                            listOf(categoriaColor, categoriaColor.copy(alpha = 0.4f))
                         )
                     )
             )
 
             Row(
-                modifier = Modifier.padding(20.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.padding(if (isSmallScreen) 14.dp else 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    shape = RoundedCornerShape(16.dp),
+                    shape = RoundedCornerShape(12.dp),
                     color = categoriaColor.copy(alpha = 0.15f),
-                    modifier = Modifier.size(70.dp)
+                    modifier = Modifier.size(if (isSmallScreen) 56.dp else 62.dp)
                 ) {
                     Column(
                         modifier = Modifier.fillMaxSize(),
@@ -1422,91 +1646,96 @@ private fun EnhancedEventoCardView(evento: EventoInfo) {
                     ) {
                         Text(
                             text = obtenerDiaDeEvento(evento.fecha),
-                            style = MaterialTheme.typography.headlineMedium,
+                            style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
-                            color = categoriaColor
+                            color = categoriaColor,
+                            fontSize = if (isSmallScreen) 20.sp else 22.sp
                         )
                         Text(
                             text = obtenerMesDeEvento(evento.fecha),
-                            style = MaterialTheme.typography.labelMedium,
+                            style = MaterialTheme.typography.labelSmall,
                             color = categoriaColor,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (isSmallScreen) 9.sp else 10.sp
                         )
                     }
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             text = evento.titulo,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = GrisOscuro,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            fontSize = if (isSmallScreen) 13.sp else 14.sp
                         )
 
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = categoriaColor.copy(alpha = 0.15f)
                         ) {
                             Text(
                                 text = when(evento.categoria) {
                                     "tarea" -> "TAREA"
-                                    "escuela_padres" -> "ESCUELA PADRES"
-                                    "institucional" -> "INSTITUCIONAL"
-                                    else -> evento.categoria.uppercase()
+                                    "escuela_padres" -> "E. PADRES"
+                                    "institucional" -> "INSTIT."
+                                    else -> evento.categoria.uppercase().take(7)
                                 },
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
                                 style = MaterialTheme.typography.labelSmall,
-                                fontSize = 10.sp,
+                                fontSize = if (isSmallScreen) 8.sp else 9.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = categoriaColor
                             )
                         }
                     }
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
 
                     if (evento.hora != null) {
                         Surface(
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(6.dp),
                             color = categoriaColor.copy(alpha = 0.1f)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
                                     Icons.Default.AccessTime,
                                     null,
                                     tint = categoriaColor,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(if (isSmallScreen) 12.dp else 13.dp)
                                 )
                                 Text(
                                     text = evento.hora,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = categoriaColor,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = if (isSmallScreen) 10.sp else 11.sp
                                 )
                             }
                         }
                     }
 
                     if (evento.descripcion.isNotEmpty()) {
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(6.dp))
                         Text(
                             text = evento.descripcion,
                             style = MaterialTheme.typography.bodySmall,
                             color = GrisMedio,
                             maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = if (isSmallScreen) 11.sp else 12.sp
                         )
                     }
                 }
@@ -1519,34 +1748,37 @@ private fun EnhancedEventoCardView(evento: EventoInfo) {
 private fun CalendarioHeaderView(
     selectedMonth: Int,
     selectedYear: Int,
-    onMonthChange: (Int, Int) -> Unit
+    onMonthChange: (Int, Int) -> Unit,
+    isSmallScreen: Boolean = false
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = FondoCard,
-        shadowElevation = 4.dp
+        shadowElevation = 3.dp
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(20.dp),
+            modifier = Modifier.fillMaxWidth().padding(if (isSmallScreen) 14.dp else 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column {
                 Text(
                     text = obtenerNombreMes(selectedMonth),
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF9C27B0)
+                    color = Color(0xFF9C27B0),
+                    fontSize = if (isSmallScreen) 18.sp else 20.sp
                 )
                 Text(
                     text = selectedYear.toString(),
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = GrisMedio,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    fontSize = if (isSmallScreen) 13.sp else 14.sp
                 )
             }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 IconButton(
                     onClick = {
                         val (newMonth, newYear) = if (selectedMonth == 1) {
@@ -1560,13 +1792,13 @@ private fun CalendarioHeaderView(
                     Surface(
                         shape = CircleShape,
                         color = Color(0xFF9C27B0).copy(alpha = 0.15f),
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(if (isSmallScreen) 36.dp else 38.dp)
                     ) {
                         Icon(
                             Icons.Default.ArrowBack,
                             "Anterior",
                             tint = Color(0xFF9C27B0),
-                            modifier = Modifier.padding(8.dp)
+                            modifier = Modifier.padding(if (isSmallScreen) 8.dp else 9.dp)
                         )
                     }
                 }
@@ -1584,13 +1816,13 @@ private fun CalendarioHeaderView(
                     Surface(
                         shape = CircleShape,
                         color = Color(0xFF9C27B0).copy(alpha = 0.15f),
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier.size(if (isSmallScreen) 36.dp else 38.dp)
                     ) {
                         Icon(
                             Icons.Default.ArrowForward,
                             "Siguiente",
                             tint = Color(0xFF9C27B0),
-                            modifier = Modifier.padding(8.dp)
+                            modifier = Modifier.padding(if (isSmallScreen) 8.dp else 9.dp)
                         )
                     }
                 }
@@ -1603,7 +1835,8 @@ private fun CalendarioHeaderView(
 private fun CalendarioGridView(
     month: Int,
     year: Int,
-    eventosDelMes: Map<Int, List<EventoInfo>>
+    eventosDelMes: Map<Int, List<EventoInfo>>,
+    isSmallScreen: Boolean = false
 ) {
     val calendar = Calendar.getInstance().apply {
         set(Calendar.YEAR, year)
@@ -1613,14 +1846,16 @@ private fun CalendarioGridView(
 
     val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
     val firstDayOfWeek = calendar.get(Calendar.DAY_OF_WEEK) - 1
+    val today = Calendar.getInstance()
+    val isCurrentMonth = today.get(Calendar.MONTH) == month - 1 && today.get(Calendar.YEAR) == year
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         color = FondoCard,
         shadowElevation = 2.dp
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(if (isSmallScreen) 12.dp else 14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
@@ -1632,12 +1867,13 @@ private fun CalendarioGridView(
                         textAlign = TextAlign.Center,
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF9C27B0)
+                        color = Color(0xFF9C27B0),
+                        fontSize = if (isSmallScreen) 11.sp else 12.sp
                     )
                 }
             }
 
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(if (isSmallScreen) 8.dp else 10.dp))
 
             var dayCounter = 1
             val rows = ((daysInMonth + firstDayOfWeek) / 7.0).toInt() + 1
@@ -1654,17 +1890,20 @@ private fun CalendarioGridView(
                             modifier = Modifier
                                 .weight(1f)
                                 .aspectRatio(1f)
-                                .padding(2.dp),
+                                .padding(if (isSmallScreen) 1.dp else 2.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             if (position >= firstDayOfWeek && dayCounter <= daysInMonth) {
                                 val hasEvents = eventosDelMes.containsKey(dayCounter)
                                 val eventCount = eventosDelMes[dayCounter]?.size ?: 0
+                                val isToday = isCurrentMonth && today.get(Calendar.DAY_OF_MONTH) == dayCounter
 
                                 CalendarioDayCellView(
                                     day = dayCounter,
                                     hasEvents = hasEvents,
-                                    eventCount = eventCount
+                                    eventCount = eventCount,
+                                    isToday = isToday,
+                                    isSmallScreen = isSmallScreen
                                 )
                                 dayCounter++
                             }
@@ -1680,13 +1919,10 @@ private fun CalendarioGridView(
 private fun CalendarioDayCellView(
     day: Int,
     hasEvents: Boolean,
-    eventCount: Int
+    eventCount: Int,
+    isToday: Boolean,
+    isSmallScreen: Boolean = false
 ) {
-    val isToday = remember {
-        val today = Calendar.getInstance()
-        today.get(Calendar.DAY_OF_MONTH) == day
-    }
-
     Surface(
         shape = CircleShape,
         color = when {
@@ -1694,7 +1930,7 @@ private fun CalendarioDayCellView(
             hasEvents -> Color(0xFF9C27B0).copy(alpha = 0.15f)
             else -> Color.Transparent
         },
-        modifier = Modifier.size(40.dp)
+        modifier = Modifier.size(if (isSmallScreen) 34.dp else 38.dp)
     ) {
         Box(
             contentAlignment = Alignment.Center,
@@ -1706,22 +1942,23 @@ private fun CalendarioDayCellView(
             ) {
                 Text(
                     text = day.toString(),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     fontWeight = if (hasEvents || isToday) FontWeight.Bold else FontWeight.Normal,
                     color = when {
                         isToday -> Color.White
                         hasEvents -> Color(0xFF9C27B0)
                         else -> GrisOscuro
-                    }
+                    },
+                    fontSize = if (isSmallScreen) 11.sp else 12.sp
                 )
 
                 if (hasEvents && !isToday) {
                     Spacer(Modifier.height(2.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(if (isSmallScreen) 1.dp else 2.dp)) {
                         repeat(minOf(eventCount, 3)) {
                             Box(
                                 modifier = Modifier
-                                    .size(4.dp)
+                                    .size(if (isSmallScreen) 3.dp else 4.dp)
                                     .background(Color(0xFF9C27B0), CircleShape)
                             )
                         }
@@ -1781,36 +2018,209 @@ private fun EmptyStateView(
     }
 }
 
+
 @Composable
-private fun ModernCursoLoadingView() {
+fun ModernCursoLoadingView() {
+    val infiniteTransition = rememberInfiniteTransition(label = "modernLoading")
+
+    // Rotación del gradiente circular
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+
+    // Pulsación del logo
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.05f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "scale"
+    )
+
+    // Alpha del resplandor
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glow"
+    )
+
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Blanco),
         contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp)
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(32.dp)
         ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(64.dp),
-                strokeWidth = 6.dp,
-                color = Color(0xFF667EEA)
-            )
+            Box(
+                modifier = Modifier.size(120.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                // Anillo exterior rotatorio con gradiente
+                Surface(
+                    modifier = Modifier
+                        .size(120.dp)
+                        .graphicsLayer {
+                            rotationZ = rotation
+                        },
+                    shape = CircleShape,
+                    color = Color.Transparent,
+                    border = androidx.compose.foundation.BorderStroke(
+                        4.dp,
+                        Brush.sweepGradient(
+                            colors = listOf(
+                                AzulCielo,
+                                VerdeLima,
+                                Fucsia,
+                                Naranja,
+                                AzulCielo
+                            )
+                        )
+                    )
+                ) {}
+
+                // Resplandor intermedio
+                Surface(
+                    modifier = Modifier
+                        .size(100.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = AzulCielo.copy(alpha = glowAlpha * 0.2f)
+                ) {}
+
+                // Logo central - AQUÍ VA TU IMAGEN
+                Surface(
+                    modifier = Modifier
+                        .size(80.dp)
+                        .scale(scale),
+                    shape = CircleShape,
+                    color = Blanco,
+                    shadowElevation = 16.dp
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        AzulCielo.copy(alpha = 0.1f),
+                                        Blanco
+                                    )
+                                )
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        // REEMPLAZA ESTO CON TU IMAGEN DEL LOGO
+                        Image(
+                            painter = painterResource(id = R.drawable.edumonavatar1), // <-- PON AQUÍ TU LOGO
+                            contentDescription = "Logo Edumon",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .padding(12.dp),
+                            contentScale = ContentScale.Fit
+                        )
+                    }
+                }
+
+                // Puntos orbitales
+                for (i in 0..2) {
+                    val orbitRotation by infiniteTransition.animateFloat(
+                        initialValue = i * 120f,
+                        targetValue = i * 120f + 360f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(3000 + i * 500, easing = LinearEasing),
+                            repeatMode = RepeatMode.Restart
+                        ),
+                        label = "orbit$i"
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .size(120.dp)
+                            .graphicsLayer {
+                                rotationZ = orbitRotation
+                            }
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .offset(y = (-60).dp)
+                                .align(Alignment.TopCenter),
+                            shape = CircleShape,
+                            color = listOf(VerdeLima, Fucsia, Naranja)[i],
+                            shadowElevation = 4.dp
+                        ) {}
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(40.dp))
+
+            // Puntos animados de carga
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (i in 0..2) {
+                    val dotScale by infiniteTransition.animateFloat(
+                        initialValue = 0.5f,
+                        targetValue = 1.2f,
+                        animationSpec = infiniteRepeatable(
+                            animation = tween(
+                                600,
+                                easing = FastOutSlowInEasing,
+                                delayMillis = i * 200
+                            ),
+                            repeatMode = RepeatMode.Reverse
+                        ),
+                        label = "dot$i"
+                    )
+
+                    Surface(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .scale(dotScale),
+                        shape = CircleShape,
+                        color = listOf(AzulCielo, VerdeLima, Fucsia)[i]
+                    ) {}
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             Text(
-                "Cargando curso...",
-                style = MaterialTheme.typography.titleLarge,
+                text = "Cargando",
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = GrisOscuro
+                color = AzulCielo
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             Text(
-                "Preparando información",
-                style = MaterialTheme.typography.bodyMedium,
-                color = GrisMedio
+                text = "Preparando tu experiencia educativa",
+                fontSize = 14.sp,
+                color = GrisNeutral,
+                fontWeight = FontWeight.Medium
             )
         }
     }
 }
-
 // ==================== DIÁLOGOS ====================
 
 @Composable
@@ -2212,4 +2622,10 @@ private fun obtenerNombreMes(mes: Int): String {
         "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
     )
     return meses.getOrNull(mes) ?: "Mes $mes"
+}
+/**
+ * Convierte un JsonElement a String de forma segura, manejando valores null
+ */
+fun com.google.gson.JsonElement?.asStringOrNull(): String? {
+    return if (this != null && !this.isJsonNull) this.asString else null
 }

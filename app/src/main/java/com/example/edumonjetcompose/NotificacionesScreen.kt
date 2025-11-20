@@ -555,12 +555,12 @@ fun NotificacionesScreen(navController: NavController) {
                                                 "entrega" -> navController.navigate("detalleEntrega/$refId")
                                                 "calificacion" -> navController.navigate("verCalificaciones/$refId")
                                                 "mensaje" -> navController.navigate("mensajes/$refId")
-                                                "evento" -> navController.navigate("detalleEvento/$refId")
+                                                "evento" -> navController.navigate("calendarioProfesor/$refId")
                                                 "recordatorio" -> {
                                                     when (notificacion.referenciaModelo) {
                                                         "Tarea" -> navController.navigate("detalleTareaProfesor/$refId")
                                                         "Curso" -> navController.navigate("infoCursoProfesor/$refId")
-                                                        "Evento" -> navController.navigate("detalleEvento/$refId")
+                                                        "Evento" -> navController.navigate("calendarioProfesor/$refId")
                                                         else -> Toast.makeText(context, "Tipo no reconocido", Toast.LENGTH_SHORT).show()
                                                     }
                                                 }

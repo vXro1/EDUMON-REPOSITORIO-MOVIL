@@ -1,6 +1,7 @@
 package com.example.edumonjetcompose.ui.screens
 
 import android.util.Log
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -322,12 +323,18 @@ fun VistaCalendarioPadre(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = 16.dp, vertical = 8.dp),
             colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(2.dp)
+            elevation = CardDefaults.cardElevation(4.dp),
+            shape = RoundedCornerShape(16.dp)
         ) {
-            Column {
-                Row(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                // Encabezado de días
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 12.dp)
+                ) {
                     listOf("Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb").forEach { dia ->
                         Box(
                             modifier = Modifier.weight(1f),
@@ -335,27 +342,31 @@ fun VistaCalendarioPadre(
                         ) {
                             Text(
                                 text = dia,
-                                fontSize = 12.sp,
+                                fontSize = 13.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = if (dia == "Dom" || dia == "Sáb") Naranja else Color.Gray,
-                                modifier = Modifier.padding(vertical = 8.dp)
+                                color = if (dia == "Dom" || dia == "Sáb") Naranja else AzulCielo.copy(alpha = 0.8f)
                             )
                         }
                     }
                 }
 
-                Divider()
+                Divider(color = Color.LightGray.copy(alpha = 0.3f), thickness = 1.dp)
+
+                Spacer(modifier = Modifier.height(8.dp))
 
                 // Grid de días
                 val diasDelMes = obtenerDiasDelMesCalendario(mesSeleccionado, anioSeleccionado)
                 val primerDia = obtenerPrimerDiaSemanaCalendario(mesSeleccionado, anioSeleccionado)
 
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     var diaActual = 1
                     var semana = 0
 
                     while (diaActual <= diasDelMes) {
-                        Row(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
                             for (diaSemana in 0..6) {
                                 val mostrarDia = if (semana == 0) {
                                     diaSemana >= primerDia && diaActual <= diasDelMes
@@ -363,44 +374,62 @@ fun VistaCalendarioPadre(
                                     diaActual <= diasDelMes
                                 }
 
+                                val diaParaMostrar = if (mostrarDia) diaActual else null
+
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
                                         .aspectRatio(1f)
+                                        .clip(RoundedCornerShape(12.dp))
                                         .clickable(enabled = mostrarDia) {
-                                            if (mostrarDia) onDiaClick(diaActual)
+                                            if (mostrarDia) {
+                                                onDiaClick(diaActual)
+                                            }
                                         }
                                         .background(
-                                            if (diaSeleccionado == diaActual) AzulCielo.copy(alpha = 0.1f)
-                                            else Color.Transparent
+                                            when {
+                                                diaSeleccionado == diaParaMostrar -> AzulCielo.copy(alpha = 0.2f)
+                                                verificarEsHoyCalendario(
+                                                    diaParaMostrar ?: 0,
+                                                    mesSeleccionado,
+                                                    anioSeleccionado
+                                                ) -> AzulCielo.copy(alpha = 0.1f)
+                                                else -> Color.Transparent
+                                            }
                                         )
                                         .border(
-                                            width = 0.5.dp,
-                                            color = Color.LightGray.copy(alpha = 0.3f)
+                                            width = if (diaSeleccionado == diaParaMostrar) 2.dp else 0.dp,
+                                            color = if (diaSeleccionado == diaParaMostrar) AzulCielo else Color.Transparent,
+                                            shape = RoundedCornerShape(12.dp)
                                         ),
-                                    contentAlignment = Alignment.TopCenter
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     if (mostrarDia) {
                                         Column(
                                             modifier = Modifier
                                                 .fillMaxSize()
-                                                .padding(4.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
+                                                .padding(6.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             // Número del día
                                             val esHoy = verificarEsHoyCalendario(diaActual, mesSeleccionado, anioSeleccionado)
                                             Box(
                                                 modifier = Modifier
-                                                    .size(24.dp)
+                                                    .size(28.dp)
                                                     .clip(CircleShape)
                                                     .background(if (esHoy) AzulCielo else Color.Transparent),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
                                                     text = diaActual.toString(),
-                                                    fontSize = 12.sp,
-                                                    fontWeight = if (esHoy) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (esHoy) Color.White else Color.Black
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (esHoy || diaSeleccionado == diaActual) FontWeight.Bold else FontWeight.Medium,
+                                                    color = when {
+                                                        esHoy -> Color.White
+                                                        diaSeleccionado == diaActual -> AzulCielo
+                                                        else -> Color.Black
+                                                    }
                                                 )
                                             }
 
@@ -413,15 +442,15 @@ fun VistaCalendarioPadre(
                                             )
 
                                             if (eventosDia.isNotEmpty()) {
-                                                Spacer(modifier = Modifier.height(2.dp))
                                                 Row(
                                                     horizontalArrangement = Arrangement.Center,
+                                                    verticalAlignment = Alignment.CenterVertically,
                                                     modifier = Modifier.fillMaxWidth()
                                                 ) {
                                                     eventosDia.take(3).forEach { evento ->
                                                         Box(
                                                             modifier = Modifier
-                                                                .size(4.dp)
+                                                                .size(5.dp)
                                                                 .clip(CircleShape)
                                                                 .background(
                                                                     Color(
@@ -431,18 +460,21 @@ fun VistaCalendarioPadre(
                                                                     )
                                                                 )
                                                         )
-                                                        if (evento != eventosDia.last()) {
-                                                            Spacer(modifier = Modifier.width(2.dp))
+                                                        if (evento != eventosDia.take(3).last()) {
+                                                            Spacer(modifier = Modifier.width(3.dp))
                                                         }
                                                     }
                                                 }
                                                 if (eventosDia.size > 3) {
                                                     Text(
                                                         text = "+${eventosDia.size - 3}",
-                                                        fontSize = 8.sp,
-                                                        color = Color.Gray
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = AzulCielo
                                                     )
                                                 }
+                                            } else {
+                                                Spacer(modifier = Modifier.height(5.dp))
                                             }
                                         }
                                         diaActual++
@@ -459,23 +491,94 @@ fun VistaCalendarioPadre(
         // Lista de eventos del día seleccionado
         if (diaSeleccionado != null) {
             val eventosDia = obtenerEventosDiaCalendario(diaSeleccionado, mesSeleccionado, anioSeleccionado, eventos)
-            if (eventosDia.isNotEmpty()) {
-                Text(
-                    text = "Eventos del día $diaSeleccionado",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(16.dp)
-                )
 
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = AzulCielo.copy(alpha = 0.1f)),
+                elevation = CardDefaults.cardElevation(0.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarToday,
+                            contentDescription = null,
+                            tint = AzulCielo,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Eventos del día $diaSeleccionado",
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = AzulCielo
+                            )
+                            Text(
+                                text = "${eventosDia.size} ${if (eventosDia.size == 1) "evento" else "eventos"}",
+                                fontSize = 12.sp,
+                                color = Color.Gray
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = { onDiaClick(diaSeleccionado) },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Limpiar selección",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+
+            if (eventosDia.isNotEmpty()) {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(eventosDia) { evento ->
                         EventoCardCompactoPadre(
                             evento = evento,
                             onClick = { onEventoClick(evento) }
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.EventBusy,
+                            contentDescription = null,
+                            tint = Color.Gray.copy(alpha = 0.5f),
+                            modifier = Modifier.size(64.dp)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text(
+                            text = "No hay eventos este día",
+                            fontSize = 16.sp,
+                            color = Color.Gray,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
@@ -494,47 +597,110 @@ fun EventoCardCompactoPadre(
             .fillMaxWidth()
             .clickable { onClick() },
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(1.dp)
+        elevation = CardDefaults.cardElevation(3.dp),
+        shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Barra de color lateral
             Box(
                 modifier = Modifier
-                    .size(8.dp)
-                    .clip(CircleShape)
+                    .width(4.dp)
+                    .height(50.dp)
+                    .clip(RoundedCornerShape(2.dp))
                     .background(Color(android.graphics.Color.parseColor(evento.color)))
             )
-            Spacer(modifier = Modifier.width(8.dp))
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Contenido
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = evento.titulo,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                if (!evento.hora.isNullOrBlank()) {
+                // Tipo de evento
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = if (evento.tipo == "tarea") Fucsia.copy(alpha = 0.12f) else AzulCielo.copy(alpha = 0.12f)
+                ) {
                     Text(
-                        text = evento.hora,
-                        fontSize = 12.sp,
-                        color = Color.Gray
+                        text = if (evento.tipo == "tarea") "Tarea" else "Evento",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (evento.tipo == "tarea") Fucsia else AzulCielo,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                     )
                 }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = evento.titulo,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.Black
+                )
+
+                if (!evento.hora.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.AccessTime,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = evento.hora,
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+
+                if (evento.tipo == "tarea" && !evento.modulo.isNullOrBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = null,
+                            tint = Color.Gray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = evento.modulo,
+                            fontSize = 12.sp,
+                            color = Color.Gray,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = Color.Gray,
-                modifier = Modifier.size(20.dp)
-            )
+
+            // Icono de navegación
+            Surface(
+                shape = CircleShape,
+                color = AzulCielo.copy(alpha = 0.1f),
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = AzulCielo,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .padding(8.dp)
+                )
+            }
         }
     }
 }
-
 @Composable
 fun FiltrosChips(
     filtroSeleccionado: String,
@@ -543,22 +709,62 @@ fun FiltrosChips(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        listOf("Todos", "Tareas", "Eventos").forEach { filtro ->
+        listOf(
+            "Todos" to Icons.Default.Dashboard,
+            "Tareas" to Icons.Default.Assignment,
+            "Eventos" to Icons.Default.Event
+        ).forEach { (filtro, icono) ->
+
+            val isSelected = filtroSeleccionado == filtro
+
             FilterChip(
-                selected = filtroSeleccionado == filtro,
+                selected = isSelected,
                 onClick = { onFiltroChange(filtro) },
-                label = { Text(filtro) },
+                enabled = true,
+
+                label = {
+                    Text(
+                        filtro,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                    )
+                },
+
+                leadingIcon = if (isSelected) {
+                    {
+                        Icon(
+                            imageVector = icono,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                } else null,
+
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = AzulCielo,
-                    selectedLabelColor = Color.White
+                    selectedLabelColor = Color.White,
+                    selectedLeadingIconColor = Color.White,
+                    containerColor = Color.White,
+                    labelColor = Color.Gray
+                ),
+
+                // Borde personalizado compatible con M3
+                border = BorderStroke(
+                    width = 1.5.dp,
+                    color = if (isSelected) AzulCielo
+                    else Color.LightGray.copy(alpha = 0.5f)
+                ),
+
+                elevation = FilterChipDefaults.elevatedFilterChipElevation(
+                    elevation = if (isSelected) 4.dp else 1.dp
                 )
             )
         }
     }
 }
+
 
 @Composable
 fun EventosListaPadre(
@@ -590,7 +796,8 @@ fun EventoCardPadre(
             .fillMaxWidth()
             .clickable { onClick() },
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(2.dp)
+        elevation = CardDefaults.cardElevation(3.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier
@@ -600,13 +807,13 @@ fun EventoCardPadre(
             // Indicador de color
             Box(
                 modifier = Modifier
-                    .width(4.dp)
-                    .height(60.dp)
-                    .clip(RoundedCornerShape(2.dp))
+                    .width(5.dp)
+                    .height(80.dp)
+                    .clip(RoundedCornerShape(3.dp))
                     .background(Color(android.graphics.Color.parseColor(evento.color)))
             )
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(16.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(
@@ -615,70 +822,127 @@ fun EventoCardPadre(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = if (evento.tipo == "tarea") Fucsia.copy(alpha = 0.15f) else AzulCielo.copy(alpha = 0.15f)
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (evento.tipo == "tarea") Fucsia.copy(alpha = 0.12f) else AzulCielo.copy(alpha = 0.12f)
                     ) {
                         Text(
-                            text = if (evento.tipo == "tarea") "Tarea" else "Evento",
+                            text = if (evento.tipo == "tarea") "📝 Tarea" else "📅 Evento",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = if (evento.tipo == "tarea") Fucsia else AzulCielo,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         )
                     }
 
-                    Text(
-                        text = formatearFechaCalendario(evento.fecha),
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color.Gray.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            text = formatearFechaCalendario(evento.fecha),
+                            fontSize = 11.sp,
+                            color = Color.Gray,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
                 Text(
                     text = evento.titulo,
-                    fontSize = 16.sp,
+                    fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.Black
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
                 if (evento.tipo == "tarea" && !evento.modulo.isNullOrBlank()) {
-                    Text(
-                        text = "📚 ${evento.modulo}",
-                        fontSize = 13.sp,
-                        color = Color.Gray,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                } else if (evento.tipo == "evento") {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Fucsia.copy(alpha = 0.08f))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
+                        Icon(
+                            imageVector = Icons.Default.MenuBook,
+                            contentDescription = null,
+                            tint = Fucsia,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = evento.modulo,
+                            fontSize = 13.sp,
+                            color = Fucsia,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                } else if (evento.tipo == "evento") {
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (!evento.hora.isNullOrBlank()) {
-                            Text(
-                                text = "🕐 ${evento.hora}",
-                                fontSize = 13.sp,
-                                color = Color.Gray
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.AccessTime,
+                                    contentDescription = null,
+                                    tint = AzulCielo,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = evento.hora,
+                                    fontSize = 13.sp,
+                                    color = Color.DarkGray,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                         if (!evento.ubicacion.isNullOrBlank()) {
-                            Text(
-                                text = " • 📍 ${evento.ubicacion}",
-                                fontSize = 13.sp,
-                                color = Color.Gray
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.LocationOn,
+                                    contentDescription = null,
+                                    tint = Naranja,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = evento.ubicacion,
+                                    fontSize = 13.sp,
+                                    color = Color.DarkGray,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
                 }
             }
 
-            Icon(
-                imageVector = Icons.Default.ChevronRight,
-                contentDescription = null,
-                tint = Color.Gray
-            )
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Surface(
+                shape = CircleShape,
+                color = AzulCielo.copy(alpha = 0.1f),
+                modifier = Modifier
+                    .size(40.dp)
+                    .align(Alignment.CenterVertically)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = null,
+                    tint = AzulCielo,
+                    modifier = Modifier.padding(10.dp)
+                )
+            }
         }
     }
 }
